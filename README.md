@@ -1,4 +1,4 @@
-# Codex Compat
+# Respond
 
 Codex의 Responses API(Streaming)를 OpenAI Compatibility API로 변환하는 리버스 프록시 서버입니다.
 

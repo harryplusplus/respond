@@ -1,4 +1,4 @@
-module github.com/harryplusplus/codex-compat
+module github.com/harryplusplus/respond
 
 go 1.26.3
 

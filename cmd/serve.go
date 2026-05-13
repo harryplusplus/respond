@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	serveHost    string
-	servePort    int
+	serveHost   string
+	servePort   int
 	serveAPIURL string
 )
 
