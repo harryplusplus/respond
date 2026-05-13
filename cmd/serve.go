@@ -30,7 +30,7 @@ Environment:
 		if apiKey == "" {
 			slog.Warn("API_KEY not set")
 		}
-		slog.Info("Starting server", "host", serveHost, "port", servePort, "upstream", serveAPIURL)
+		slog.Info("Starting server", "host", serveHost, "port", servePort, "api_url", serveAPIURL)
 		return nil
 	},
 }
