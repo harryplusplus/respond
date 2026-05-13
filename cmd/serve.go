@@ -1,3 +1,6 @@
+/*
+Copyright © 2026 harryplusplus <harryplusplus@gmail.com>
+*/
 package cmd
 
 import (
@@ -6,38 +9,37 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-)
-
-var (
-	serveHost   string
-	servePort   int
-	serveAPIURL string
+	"github.com/spf13/viper"
 )
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start the reverse proxy server",
-	Long: `Start the reverse proxy server that converts Codex Responses API to OpenAI Compatibility API.
-
-Environment:
-  API_KEY  API key for upstream OpenAI Compatibility API (optional).`,
+	Long:  `Start the reverse proxy server that converts Codex Responses API to OpenAI Compatibility API.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
-		if serveAPIURL == "" {
-			return fmt.Errorf("--api-url is required")
+
+		host := viper.GetString("host")
+		port := viper.GetInt("port")
+		apiURL := viper.GetString("api_url")
+		if apiURL == "" {
+			return fmt.Errorf("api_url is required in config file")
 		}
-		apiKey := os.Getenv("API_KEY")
-		if apiKey == "" {
-			slog.Warn("API_KEY not set")
+
+		if envKey := viper.GetString("api_key_env"); envKey != "" {
+			apiKey := os.Getenv(envKey)
+			if apiKey == "" {
+				slog.Warn("api key not found", "env", envKey)
+			} else {
+				slog.Info("api key loaded", "env", envKey)
+			}
 		}
-		slog.Info("Starting server", "host", serveHost, "port", servePort, "api_url", serveAPIURL)
+
+		slog.Info("Starting server", "host", host, "port", port, "api_url", apiURL)
 		return nil
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(serveCmd)
-	serveCmd.Flags().StringVar(&serveHost, "host", "localhost", "Host to bind the server to")
-	serveCmd.Flags().IntVar(&servePort, "port", 8080, "Port to bind the server to")
-	serveCmd.Flags().StringVar(&serveAPIURL, "api-url", "", "Upstream OpenAI Compatibility API URL (e.g. https://crof.ai/v1)")
 }
