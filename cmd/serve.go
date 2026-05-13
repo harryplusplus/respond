@@ -1,6 +1,3 @@
-/*
-Copyright © 2026 harryplusplus <harryplusplus@gmail.com>
-*/
 package cmd
 
 import (
@@ -9,7 +6,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+
+	"github.com/harryplusplus/respond/internal/config"
 )
 
 var serveCmd = &cobra.Command{
@@ -19,23 +17,20 @@ var serveCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 
-		host := viper.GetString("host")
-		port := viper.GetInt("port")
-		apiURL := viper.GetString("api_url")
-		if apiURL == "" {
+		if config.C.APIURL == "" {
 			return fmt.Errorf("api_url is required in config file")
 		}
 
-		if envKey := viper.GetString("api_key_env"); envKey != "" {
-			apiKey := os.Getenv(envKey)
+		if config.C.APIKeyEnv != "" {
+			apiKey := os.Getenv(config.C.APIKeyEnv)
 			if apiKey == "" {
-				slog.Warn("api key not found", "env", envKey)
+				slog.Warn("api key not found", "env", config.C.APIKeyEnv)
 			} else {
-				slog.Info("api key loaded", "env", envKey)
+				slog.Info("api key loaded", "env", config.C.APIKeyEnv)
 			}
 		}
 
-		slog.Info("Starting server", "host", host, "port", port, "api_url", apiURL)
+		slog.Info("Starting server", "host", config.C.Host, "port", config.C.Port, "api_url", config.C.APIURL)
 		return nil
 	},
 }
