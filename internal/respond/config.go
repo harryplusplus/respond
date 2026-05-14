@@ -6,14 +6,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync/atomic"
 
 	"github.com/spf13/viper"
 )
 
 type Config struct {
-	Host      string              `mapstructure:"host"`
-	Port      int                 `mapstructure:"port"`
+	Address   string              `mapstructure:"address"`
 	Providers map[string]Provider `mapstructure:"providers"`
 }
 
@@ -51,8 +51,7 @@ func loadConfig() (*Config, error) {
 	v := viper.New()
 	v.SetConfigName("respond")
 	v.SetConfigType("yaml")
-	v.SetDefault("host", "localhost")
-	v.SetDefault("port", 8080)
+	v.SetDefault("address", "0.0.0.0:8080")
 
 	dir, err := respondDir()
 	if err != nil {
@@ -86,18 +85,26 @@ func InitConfig() error {
 }
 
 func (c *Config) baseURL() string {
-	return fmt.Sprintf("http://%s:%d", c.Host, c.Port)
+	return "http://" + c.Address
 }
 
 func parseConfig(cfg *Config) error {
-	if cfg.Host != "localhost" {
-		ip := net.ParseIP(cfg.Host)
+	host, port, err := net.SplitHostPort(cfg.Address)
+	if err != nil {
+		return fmt.Errorf("invalid address %q: %w", cfg.Address, err)
+	}
+	if host != "localhost" {
+		ip := net.ParseIP(host)
 		if ip == nil || ip.To4() == nil {
-			return fmt.Errorf("host must be valid IPv4 address or localhost, got %q", cfg.Host)
+			return fmt.Errorf("host must be localhost or a valid IPv4 address, got %q", host)
 		}
 	}
-	if cfg.Port < 1 || cfg.Port > 65535 {
-		return fmt.Errorf("port must be between 1 and 65535, got %d", cfg.Port)
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		return fmt.Errorf("invalid port %q in address %q", port, cfg.Address)
+	}
+	if portNum < 1 || portNum > 65535 {
+		return fmt.Errorf("port must be between 1 and 65535, got %d", portNum)
 	}
 	return nil
 }

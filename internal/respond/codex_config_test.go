@@ -2,7 +2,6 @@ package respond
 
 import (
 	"os"
-	"strconv"
 	"testing"
 
 	"github.com/pelletier/go-toml/v2"
@@ -21,10 +20,10 @@ func setupCodexConfig(t *testing.T, codexHome string, cfg map[string]any) string
 	return path
 }
 
-func initRespondConfig(t *testing.T, host string, port int) *Config {
+func initRespondConfig(t *testing.T, address string) *Config {
 	t.Helper()
 	respondHome := t.TempDir()
-	data := []byte("host: " + host + "\nport: " + strconv.Itoa(port) + "\n")
+	data := []byte("address: " + address + "\n")
 	if err := os.WriteFile(respondConfigPath(respondHome), data, 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +219,7 @@ func TestRunCodexConfig_UpdatesWhenMissingProvider(t *testing.T) {
 		},
 	})
 	t.Setenv(codexHomeEnv, codexHome)
-	cfg := initRespondConfig(t, "0.0.0.0", 9999)
+	cfg := initRespondConfig(t, "0.0.0.0:9999")
 
 	if err := runCodexConfig(cfg); err != nil {
 		t.Fatal(err)
@@ -248,7 +247,7 @@ func TestRunCodexConfig_UpdatesWhenWrongProvider(t *testing.T) {
 		},
 	})
 	t.Setenv(codexHomeEnv, codexHome)
-	cfg := initRespondConfig(t, "127.0.0.1", 8081)
+	cfg := initRespondConfig(t, "127.0.0.1:8081")
 
 	if err := runCodexConfig(cfg); err != nil {
 		t.Fatal(err)
@@ -280,7 +279,7 @@ func TestRunCodexConfig_SkipsWriteWhenAlreadyCorrect(t *testing.T) {
 	}
 	cfgPath := setupCodexConfig(t, codexHome, initial)
 	t.Setenv(codexHomeEnv, codexHome)
-	cfg := initRespondConfig(t, "0.0.0.0", 9999)
+	cfg := initRespondConfig(t, "0.0.0.0:9999")
 
 	origStat, _ := os.Stat(cfgPath)
 	origMod := origStat.ModTime()
@@ -311,7 +310,7 @@ func TestRunCodexConfig_CleansUpOldBak(t *testing.T) {
 		},
 	})
 	t.Setenv(codexHomeEnv, codexHome)
-	cfg := initRespondConfig(t, "0.0.0.0", 9999)
+	cfg := initRespondConfig(t, "0.0.0.0:9999")
 
 	bakPath := codexConfigPath(codexHome) + ".bak"
 	os.WriteFile(bakPath, []byte("stale backup"), 0644)

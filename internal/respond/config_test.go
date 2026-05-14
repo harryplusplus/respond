@@ -297,18 +297,18 @@ func TestBaseURL(t *testing.T) {
 		cfg  Config
 		want string
 	}{
-		{name: "localhost_default", cfg: Config{Host: "localhost", Port: 8080}, want: "http://localhost:8080"},
-		{name: "ipv4", cfg: Config{Host: "127.0.0.1", Port: 8080}, want: "http://127.0.0.1:8080"},
-		{name: "all_zeros", cfg: Config{Host: "0.0.0.0", Port: 9999}, want: "http://0.0.0.0:9999"},
-		{name: "port_one", cfg: Config{Host: "localhost", Port: 1}, want: "http://localhost:1"},
-		{name: "port_max", cfg: Config{Host: "localhost", Port: 65535}, want: "http://localhost:65535"},
+		{name: "localhost_default", cfg: Config{Address: "localhost:8080"}, want: "http://localhost:8080"},
+		{name: "ipv4", cfg: Config{Address: "127.0.0.1:8080"}, want: "http://127.0.0.1:8080"},
+		{name: "all_zeros", cfg: Config{Address: "0.0.0.0:9999"}, want: "http://0.0.0.0:9999"},
+		{name: "port_one", cfg: Config{Address: "localhost:1"}, want: "http://localhost:1"},
+		{name: "port_max", cfg: Config{Address: "localhost:65535"}, want: "http://localhost:65535"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := tt.cfg.baseURL()
 			if got != tt.want {
-				t.Errorf("Config{Host: %q, Port: %d}.baseURL() = %q, want %q", tt.cfg.Host, tt.cfg.Port, got, tt.want)
+				t.Errorf("Config{Address: %q}.baseURL() = %q, want %q", tt.cfg.Address, got, tt.want)
 			}
 		})
 	}
@@ -317,7 +317,7 @@ func TestBaseURL(t *testing.T) {
 func TestLoadConfig(t *testing.T) {
 	t.Run("with_config_file", func(t *testing.T) {
 		home := t.TempDir()
-		data := []byte("host: 127.0.0.1\nport: 9999\n")
+		data := []byte("address: 127.0.0.1:9999\n")
 		if err := os.WriteFile(respondConfigPath(home), data, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -327,11 +327,8 @@ func TestLoadConfig(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if cfg.Host != "127.0.0.1" {
-			t.Errorf("Host = %q, want %q", cfg.Host, "127.0.0.1")
-		}
-		if cfg.Port != 9999 {
-			t.Errorf("Port = %d, want %d", cfg.Port, 9999)
+		if cfg.Address != "127.0.0.1:9999" {
+			t.Errorf("Address = %q, want %q", cfg.Address, "127.0.0.1:9999")
 		}
 	})
 
@@ -342,11 +339,8 @@ func TestLoadConfig(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if cfg.Host != "localhost" {
-			t.Errorf("default Host = %q, want %q", cfg.Host, "localhost")
-		}
-		if cfg.Port != 8080 {
-			t.Errorf("default Port = %d, want %d", cfg.Port, 8080)
+		if cfg.Address != "0.0.0.0:8080" {
+			t.Errorf("default Address = %q, want %q", cfg.Address, "0.0.0.0:8080")
 		}
 	})
 
@@ -364,7 +358,7 @@ func TestLoadConfig(t *testing.T) {
 
 	t.Run("validation_error", func(t *testing.T) {
 		home := t.TempDir()
-		data := []byte("host: example.com\nport: 8080\n")
+		data := []byte("address: example.com:8080\n")
 		if err := os.WriteFile(respondConfigPath(home), data, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -385,83 +379,82 @@ func TestParseConfig(t *testing.T) {
 		{
 			name: "valid_default",
 			cfg: Config{
-				Host: "localhost",
-				Port: 8080,
+				Address: "localhost:8080",
 			},
 		},
 		{
 			name: "valid_ipv4",
 			cfg: Config{
-				Host: "127.0.0.1",
-				Port: 8080,
+				Address: "127.0.0.1:8080",
 			},
+		},
+		{
+			name:    "empty_host",
+			cfg:     Config{Address: ":8080"},
+			wantErr: true,
 		},
 		{
 			name: "valid_all_zeros",
 			cfg: Config{
-				Host: "0.0.0.0",
-				Port: 8080,
+				Address: "0.0.0.0:8080",
 			},
 		},
 		{
 			name: "valid_private_ip",
 			cfg: Config{
-				Host: "192.168.1.1",
-				Port: 8080,
+				Address: "192.168.1.1:8080",
 			},
 		},
 		{
 			name: "valid_port_min",
 			cfg: Config{
-				Host: "localhost",
-				Port: 1,
+				Address: "localhost:1",
 			},
 		},
 		{
 			name: "valid_port_max",
 			cfg: Config{
-				Host: "localhost",
-				Port: 65535,
+				Address: "localhost:65535",
 			},
 		},
 		{
-			name:    "empty_host",
-			cfg:     Config{Host: "", Port: 8080},
+			name:    "empty_address",
+			cfg:     Config{Address: ""},
 			wantErr: true,
 		},
 		{
 			name:    "hostname_instead_of_ip",
-			cfg:     Config{Host: "example.com", Port: 8080},
+			cfg:     Config{Address: "example.com:8080"},
+			wantErr: true,
+		},
+		{
+			name:    "missing_colon_and_port",
+			cfg:     Config{Address: "localhost"},
 			wantErr: true,
 		},
 		{
 			name:    "non_ip_string",
-			cfg:     Config{Host: "not-an-ip", Port: 8080},
-			wantErr: true,
-		},
-		{
-			name:    "invalid_ip_with_spaces",
-			cfg:     Config{Host: " 192.168.1.1 ", Port: 8080},
+			cfg:     Config{Address: "not-an-ip:8080"},
 			wantErr: true,
 		},
 		{
 			name:    "port_zero",
-			cfg:     Config{Host: "localhost", Port: 0},
+			cfg:     Config{Address: "localhost:0"},
 			wantErr: true,
 		},
 		{
 			name:    "port_negative",
-			cfg:     Config{Host: "localhost", Port: -1},
+			cfg:     Config{Address: "localhost:-1"},
 			wantErr: true,
 		},
 		{
 			name:    "port_too_high",
-			cfg:     Config{Host: "localhost", Port: 65536},
+			cfg:     Config{Address: "localhost:65536"},
 			wantErr: true,
 		},
 		{
 			name:    "port_max_int",
-			cfg:     Config{Host: "localhost", Port: 999999},
+			cfg:     Config{Address: "localhost:999999"},
 			wantErr: true,
 		},
 	}
