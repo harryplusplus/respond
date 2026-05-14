@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-func RunServer() error {
+func runServer(cfg *Config) error {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 
 	// if config.APIURL == "" {
@@ -24,4 +24,8 @@ func RunServer() error {
 
 	// slog.Info("Starting server", "host", config.Host, "port", config.Port, "api_url", config.APIURL)
 	return nil
+}
+
+func RunServer() error {
+	return runServer(Cfg.Load())
 }

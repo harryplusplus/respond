@@ -17,7 +17,7 @@ func codexConfigPath(dir string) string {
 	return filepath.Join(dir, "config.toml")
 }
 
-func RunCodexConfig(cfg *Config) error {
+func runCodexConfig(cfg *Config) error {
 	dir, err := codexDir()
 	if err != nil {
 		return err
@@ -61,6 +61,10 @@ func RunCodexConfig(cfg *Config) error {
 	fmt.Printf("  backup: %s\n", codexBakPath)
 
 	return nil
+}
+
+func RunCodexConfig() error {
+	return runCodexConfig(Cfg.Load())
 }
 
 func codexModelProvider(cfg map[string]any) string {

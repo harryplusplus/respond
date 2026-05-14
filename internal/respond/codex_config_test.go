@@ -222,7 +222,7 @@ func TestRunCodexConfig_UpdatesWhenMissingProvider(t *testing.T) {
 	t.Setenv(codexHomeEnv, codexHome)
 	cfg := initRespondConfig(t, "0.0.0.0", 9999)
 
-	if err := RunCodexConfig(cfg); err != nil {
+	if err := runCodexConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -250,7 +250,7 @@ func TestRunCodexConfig_UpdatesWhenWrongProvider(t *testing.T) {
 	t.Setenv(codexHomeEnv, codexHome)
 	cfg := initRespondConfig(t, "127.0.0.1", 8081)
 
-	if err := RunCodexConfig(cfg); err != nil {
+	if err := runCodexConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -285,7 +285,7 @@ func TestRunCodexConfig_SkipsWriteWhenAlreadyCorrect(t *testing.T) {
 	origStat, _ := os.Stat(cfgPath)
 	origMod := origStat.ModTime()
 
-	if err := RunCodexConfig(cfg); err != nil {
+	if err := runCodexConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -316,7 +316,7 @@ func TestRunCodexConfig_CleansUpOldBak(t *testing.T) {
 	bakPath := codexConfigPath(codexHome) + ".bak"
 	os.WriteFile(bakPath, []byte("stale backup"), 0644)
 
-	if err := RunCodexConfig(cfg); err != nil {
+	if err := runCodexConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 
