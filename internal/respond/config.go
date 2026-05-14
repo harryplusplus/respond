@@ -1,10 +1,12 @@
-package config
+package respond
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 )
 
@@ -25,11 +27,11 @@ type ModelEntry struct {
 	InputModalities        []string `mapstructure:"input_modalities"`
 }
 
-var C Config
+var config Config
 
-func Init() error {
+func InitConfig() error {
 	viper.SetConfigName("respond")
-	viper.SetConfigType("toml")
+	viper.SetConfigType("yaml")
 	viper.SetDefault("host", "localhost")
 	viper.SetDefault("port", 8080)
 
@@ -37,18 +39,23 @@ func Init() error {
 		viper.AddConfigPath(home)
 	}
 
-	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		viper.AddConfigPath(filepath.Join(homeDir, ".respond"))
+	if dir, err := os.UserHomeDir(); err == nil {
+		viper.AddConfigPath(filepath.Join(dir, ".respond"))
 	}
 
 	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		if _, ok := errors.AsType[viper.ConfigFileNotFoundError](err); !ok {
 			return err
 		}
 	}
 
-	return viper.Unmarshal(&C)
+	viper.OnConfigChange(func(e fsnotify.Event) {
+		fmt.Println("Config file changed:", e.Name)
+	})
+
+	viper.WatchConfig()
+
+	return viper.Unmarshal(&config)
 }
 
 func (c Config) BaseURL() string {

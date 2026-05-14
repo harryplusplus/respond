@@ -1,4 +1,4 @@
-package cmd
+package respond
 
 import (
 	"encoding/json"
@@ -7,10 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/spf13/cobra"
-
-	"github.com/harryplusplus/respond/internal/config"
 )
 
 type catalogModel struct {
@@ -35,24 +31,7 @@ type modelCatalog struct {
 	Models []catalogModel `json:"models"`
 }
 
-var configCodexCmd = &cobra.Command{
-	Use:   "codex",
-	Short: "Generate/update Codex config.toml from Respond config",
-	Long: `Reads Respond config and writes the Codex configuration file
-($CODEX_HOME/config.toml, falling back to ~/.codex/config.toml).
-
-If the Respond config has model definitions, generates a model
-catalog for Codex and links it in the config.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runCodexConfig()
-	},
-}
-
-func init() {
-	configCmd.AddCommand(configCodexCmd)
-}
-
-func runCodexConfig() error {
+func RunCodexConfig() error {
 	providerName := "respond"
 
 	codexHome := os.Getenv("CODEX_HOME")
@@ -70,9 +49,9 @@ func runCodexConfig() error {
 	catalogPath := filepath.Join(codexDir, "catalog-respond.json")
 
 	var catalogPathAbs string
-	if len(config.C.Models) > 0 {
+	if len(config.Models) > 0 {
 		var err error
-		catalogPathAbs, err = writeCatalog(catalogPath, config.C.Models)
+		catalogPathAbs, err = writeCatalog(catalogPath, config.Models)
 		if err != nil {
 			return fmt.Errorf("cannot write model catalog: %w", err)
 		}
@@ -98,7 +77,7 @@ func runCodexConfig() error {
 		}
 	}
 
-	newContent := buildCodexConfig(string(oldContent), providerName, config.C.BaseURL(), config.C.APIKeyEnv, catalogPathAbs)
+	newContent := buildCodexConfig(string(oldContent), providerName, config.BaseURL(), config.APIKeyEnv, catalogPathAbs)
 
 	if err := os.MkdirAll(filepath.Dir(codexConfigPath), 0755); err != nil {
 		return fmt.Errorf("cannot create config directory: %w", err)
@@ -120,14 +99,14 @@ func runCodexConfig() error {
 	fmt.Printf("    model_catalog_json    = %s\n", catalogPathAbs)
 	fmt.Printf("    [model_providers.%s]\n", providerName)
 	fmt.Printf("      name                = %s\n", providerName)
-	fmt.Printf("      base_url            = %s\n", config.C.BaseURL())
-	if config.C.APIKeyEnv != "" {
-		fmt.Printf("      env_key             = %s\n", config.C.APIKeyEnv)
+	fmt.Printf("      base_url            = %s\n", config.BaseURL())
+	if config.APIKeyEnv != "" {
+		fmt.Printf("      env_key             = %s\n", config.APIKeyEnv)
 	}
 	fmt.Printf("      wire_api            = responses\n")
 	fmt.Println()
-	fmt.Printf("  Models (%d):\n", len(config.C.Models))
-	for _, m := range config.C.Models {
+	fmt.Printf("  Models (%d):\n", len(config.Models))
+	for _, m := range config.Models {
 		fmt.Printf("    - %s (priority %d)\n", m.Slug, m.Priority)
 	}
 	fmt.Println()
@@ -139,7 +118,7 @@ func runCodexConfig() error {
 	return nil
 }
 
-func writeCatalog(path string, entries []config.ModelEntry) (string, error) {
+func writeCatalog(path string, entries []ModelEntry) (string, error) {
 	models := make([]catalogModel, 0, len(entries))
 	for _, e := range entries {
 		cm := catalogModel{

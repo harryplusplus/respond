@@ -1,7 +1,4 @@
-/*
-Copyright © 2026 harryplusplus <harryplusplus@gmail.com>
-*/
-package cmd
+package main
 
 import (
 	"github.com/spf13/cobra"

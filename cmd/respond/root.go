@@ -1,15 +1,14 @@
-package cmd
+package main
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 
-	"github.com/harryplusplus/respond/internal/config"
+	"github.com/harryplusplus/respond/internal/respond"
 )
 
 // Version is set via -ldflags at build time, e.g.:
-//	go build -ldflags="-X github.com/harryplusplus/respond/cmd.Version=0.1.0" .
+//
+//	go build -ldflags="-X main.Version=0.1.0" ./cmd/respond
 var Version = "0.0.0"
 
 var rootCmd = &cobra.Command{
@@ -19,14 +18,8 @@ var rootCmd = &cobra.Command{
 to OpenAI Compatibility API for use with Codex.`,
 	Version: Version,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		return config.Init()
+		return respond.InitConfig()
 	},
-}
-
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
-	}
 }
 
 func init() {
