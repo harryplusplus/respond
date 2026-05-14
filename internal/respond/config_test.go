@@ -314,7 +314,7 @@ func TestBaseURL(t *testing.T) {
 	}
 }
 
-func TestNewConfig(t *testing.T) {
+func TestLoadConfig(t *testing.T) {
 	t.Run("with_config_file", func(t *testing.T) {
 		home := t.TempDir()
 		data := []byte("host: 127.0.0.1\nport: 9999\n")
@@ -323,7 +323,7 @@ func TestNewConfig(t *testing.T) {
 		}
 		t.Setenv(respondHomeEnv, home)
 
-		cfg, err := newConfig()
+		cfg, err := loadConfig()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -338,7 +338,7 @@ func TestNewConfig(t *testing.T) {
 	t.Run("without_config_file", func(t *testing.T) {
 		t.Setenv(respondHomeEnv, t.TempDir())
 
-		cfg, err := newConfig()
+		cfg, err := loadConfig()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -357,8 +357,8 @@ func TestNewConfig(t *testing.T) {
 		}
 		t.Setenv(respondHomeEnv, home)
 
-		if _, err := newConfig(); err == nil {
-			t.Error("newConfig() expected error, got nil")
+		if _, err := loadConfig(); err == nil {
+			t.Error("loadConfig() expected error, got nil")
 		}
 	})
 
@@ -370,8 +370,8 @@ func TestNewConfig(t *testing.T) {
 		}
 		t.Setenv(respondHomeEnv, home)
 
-		if _, err := newConfig(); err == nil {
-			t.Error("newConfig() expected error for invalid host, got nil")
+		if _, err := loadConfig(); err == nil {
+			t.Error("loadConfig() expected error for invalid host, got nil")
 		}
 	})
 }

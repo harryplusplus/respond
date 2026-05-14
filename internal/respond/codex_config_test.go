@@ -21,17 +21,19 @@ func setupCodexConfig(t *testing.T, codexHome string, cfg map[string]any) string
 	return path
 }
 
-func initRespondConfig(t *testing.T, host string, port int) {
+func initRespondConfig(t *testing.T, host string, port int) *Config {
 	t.Helper()
 	respondHome := t.TempDir()
-	cfg := []byte("host: " + host + "\nport: " + strconv.Itoa(port) + "\n")
-	if err := os.WriteFile(respondConfigPath(respondHome), cfg, 0644); err != nil {
+	data := []byte("host: " + host + "\nport: " + strconv.Itoa(port) + "\n")
+	if err := os.WriteFile(respondConfigPath(respondHome), data, 0644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(respondHomeEnv, respondHome)
-	if err := InitConfig(); err != nil {
+	cfg, err := loadConfig()
+	if err != nil {
 		t.Fatal(err)
 	}
+	return cfg
 }
 
 func assertCodexConfig(t *testing.T, path string, wantMap map[string]any) {
@@ -218,9 +220,9 @@ func TestRunCodexConfig_UpdatesWhenMissingProvider(t *testing.T) {
 		},
 	})
 	t.Setenv(codexHomeEnv, codexHome)
-	initRespondConfig(t, "0.0.0.0", 9999)
+	cfg := initRespondConfig(t, "0.0.0.0", 9999)
 
-	if err := RunCodexConfig(); err != nil {
+	if err := RunCodexConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -246,9 +248,9 @@ func TestRunCodexConfig_UpdatesWhenWrongProvider(t *testing.T) {
 		},
 	})
 	t.Setenv(codexHomeEnv, codexHome)
-	initRespondConfig(t, "127.0.0.1", 8081)
+	cfg := initRespondConfig(t, "127.0.0.1", 8081)
 
-	if err := RunCodexConfig(); err != nil {
+	if err := RunCodexConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -278,12 +280,12 @@ func TestRunCodexConfig_SkipsWriteWhenAlreadyCorrect(t *testing.T) {
 	}
 	cfgPath := setupCodexConfig(t, codexHome, initial)
 	t.Setenv(codexHomeEnv, codexHome)
-	initRespondConfig(t, "0.0.0.0", 9999)
+	cfg := initRespondConfig(t, "0.0.0.0", 9999)
 
 	origStat, _ := os.Stat(cfgPath)
 	origMod := origStat.ModTime()
 
-	if err := RunCodexConfig(); err != nil {
+	if err := RunCodexConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -309,12 +311,12 @@ func TestRunCodexConfig_CleansUpOldBak(t *testing.T) {
 		},
 	})
 	t.Setenv(codexHomeEnv, codexHome)
-	initRespondConfig(t, "0.0.0.0", 9999)
+	cfg := initRespondConfig(t, "0.0.0.0", 9999)
 
 	bakPath := codexConfigPath(codexHome) + ".bak"
 	os.WriteFile(bakPath, []byte("stale backup"), 0644)
 
-	if err := RunCodexConfig(); err != nil {
+	if err := RunCodexConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 

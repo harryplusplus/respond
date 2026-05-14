@@ -26,7 +26,7 @@ type Provider struct {
 type Model struct {
 }
 
-var config atomic.Pointer[Config]
+var Cfg atomic.Pointer[Config]
 
 const respondHomeEnv = "RESPOND_HOME"
 
@@ -47,7 +47,7 @@ func respondConfigPath(dir string) string {
 	return filepath.Join(dir, "respond.yaml")
 }
 
-func newConfig() (*Config, error) {
+func loadConfig() (*Config, error) {
 	v := viper.New()
 	v.SetConfigName("respond")
 	v.SetConfigType("yaml")
@@ -77,11 +77,11 @@ func newConfig() (*Config, error) {
 }
 
 func InitConfig() error {
-	cfg, err := newConfig()
+	cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}
-	config.Store(cfg)
+	Cfg.Store(cfg)
 	return nil
 }
 

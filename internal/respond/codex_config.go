@@ -17,7 +17,7 @@ func codexConfigPath(dir string) string {
 	return filepath.Join(dir, "config.toml")
 }
 
-func RunCodexConfig() error {
+func RunCodexConfig(cfg *Config) error {
 	dir, err := codexDir()
 	if err != nil {
 		return err
@@ -34,7 +34,7 @@ func RunCodexConfig() error {
 		return fmt.Errorf("parse codex config: %w", err)
 	}
 
-	baseURL := config.Load().BaseURL()
+	baseURL := cfg.BaseURL()
 
 	if !applyRespondConfig(codexCfg, baseURL) {
 		fmt.Printf("%s: already up to date\n", codexCfgPath)

@@ -14,7 +14,7 @@ var configCodexCmd = &cobra.Command{
 If the Respond config has model definitions, generates a model
 catalog for Codex and links it in the config.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return respond.RunCodexConfig()
+		return respond.RunCodexConfig(respond.Cfg.Load())
 	},
 }
 
