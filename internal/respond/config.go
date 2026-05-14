@@ -27,6 +27,10 @@ type Model struct {
 
 var config atomic.Pointer[Config]
 
+func parseConfig(cfg *Config) error {
+	return nil
+}
+
 func InitConfig() error {
 	viper.SetConfigName("respond")
 	viper.SetConfigType("yaml")
@@ -47,6 +51,9 @@ func InitConfig() error {
 
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
+		return err
+	}
+	if err := parseConfig(&cfg); err != nil {
 		return err
 	}
 	config.Store(&cfg)
