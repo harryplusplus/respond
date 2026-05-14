@@ -2,6 +2,7 @@ package respond
 
 import (
 	"context"
+	_ "embed"
 	"log/slog"
 	"net/http"
 	"os"
@@ -9,6 +10,10 @@ import (
 	"syscall"
 	"time"
 )
+
+// Source: https://github.com/openai/codex/blob/main/codex-rs/models-manager/prompt.md (Apache-2.0)
+//go:embed base_instructions.md
+var baseInstructions string
 
 func RunServer() error {
 	return runServer(config.Load())
