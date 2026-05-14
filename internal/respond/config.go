@@ -19,7 +19,7 @@ type Config struct {
 
 type Provider struct {
 	BaseURL string           `mapstructure:"base_url"`
-	KeyEnv  string           `mapstructure:"key_env"`
+	EnvKey  string           `mapstructure:"env_key"`
 	Models  map[string]Model `mapstructure:"models"`
 }
 
@@ -28,13 +28,19 @@ type Model struct {
 
 var config atomic.Pointer[Config]
 
+const respondHomeEnv = "RESPOND_HOME"
+
+func respondConfigPath(dir string) string {
+	return filepath.Join(dir, "respond.yaml")
+}
+
 func InitConfig() error {
 	viper.SetConfigName("respond")
 	viper.SetConfigType("yaml")
 	viper.SetDefault("host", "localhost")
 	viper.SetDefault("port", 8080)
 
-	if home := os.Getenv("RESPOND_HOME"); home != "" {
+	if home := os.Getenv(respondHomeEnv); home != "" {
 		viper.AddConfigPath(home)
 	} else if dir, err := os.UserHomeDir(); err == nil {
 		viper.AddConfigPath(filepath.Join(dir, ".respond"))
