@@ -32,7 +32,7 @@ type modelCatalog struct {
 }
 
 func RunCodexConfig() error {
-	providerName := "respond"
+	// providerName := "respond"
 
 	codexHome := os.Getenv("CODEX_HOME")
 	var codexDir string
@@ -46,16 +46,16 @@ func RunCodexConfig() error {
 		codexDir = filepath.Join(homeDir, ".codex")
 	}
 	codexConfigPath := filepath.Join(codexDir, "config.toml")
-	catalogPath := filepath.Join(codexDir, "catalog-respond.json")
+	// catalogPath := filepath.Join(codexDir, "catalog-respond.json")
 
-	var catalogPathAbs string
-	if len(config.Models) > 0 {
-		var err error
-		catalogPathAbs, err = writeCatalog(catalogPath, config.Models)
-		if err != nil {
-			return fmt.Errorf("cannot write model catalog: %w", err)
-		}
-	}
+	// var catalogPathAbs string
+	// if len(config.Models) > 0 {
+	// 	var err error
+	// 	catalogPathAbs, err = writeCatalog(catalogPath, config.Models)
+	// 	if err != nil {
+	// 		return fmt.Errorf("cannot write model catalog: %w", err)
+	// 	}
+	// }
 
 	backupPath := ""
 	if _, err := os.Stat(codexConfigPath); err == nil {
@@ -69,78 +69,78 @@ func RunCodexConfig() error {
 		}
 	}
 
-	var oldContent []byte
-	if _, err := os.Stat(codexConfigPath); err == nil {
-		oldContent, err = os.ReadFile(codexConfigPath)
-		if err != nil {
-			return fmt.Errorf("cannot read existing config: %w", err)
-		}
-	}
+	// var oldContent []byte
+	// if _, err := os.Stat(codexConfigPath); err == nil {
+	// 	oldContent, err = os.ReadFile(codexConfigPath)
+	// 	if err != nil {
+	// 		return fmt.Errorf("cannot read existing config: %w", err)
+	// 	}
+	// }
 
-	newContent := buildCodexConfig(string(oldContent), providerName, config.BaseURL(), config.APIKeyEnv, catalogPathAbs)
+	// newContent := buildCodexConfig(string(oldContent), providerName, config.BaseURL(), config.APIKeyEnv, catalogPathAbs)
 
-	if err := os.MkdirAll(filepath.Dir(codexConfigPath), 0755); err != nil {
-		return fmt.Errorf("cannot create config directory: %w", err)
-	}
-	if err := os.WriteFile(codexConfigPath, []byte(newContent), 0644); err != nil {
-		return fmt.Errorf("cannot write config: %w", err)
-	}
+	// if err := os.MkdirAll(filepath.Dir(codexConfigPath), 0755); err != nil {
+	// 	return fmt.Errorf("cannot create config directory: %w", err)
+	// }
+	// if err := os.WriteFile(codexConfigPath, []byte(newContent), 0644); err != nil {
+	// 	return fmt.Errorf("cannot write config: %w", err)
+	// }
 
-	fmt.Println("✓ Codex configuration updated")
-	fmt.Println()
-	fmt.Printf("  File:       %s\n", codexConfigPath)
-	if backupPath != "" {
-		fmt.Printf("  Backup:     %s\n", backupPath)
-	}
-	fmt.Printf("  Catalog:    %s\n", catalogPath)
-	fmt.Println()
-	fmt.Println("  Changes made:")
-	fmt.Printf("    model_provider        = %s\n", providerName)
-	fmt.Printf("    model_catalog_json    = %s\n", catalogPathAbs)
-	fmt.Printf("    [model_providers.%s]\n", providerName)
-	fmt.Printf("      name                = %s\n", providerName)
-	fmt.Printf("      base_url            = %s\n", config.BaseURL())
-	if config.APIKeyEnv != "" {
-		fmt.Printf("      env_key             = %s\n", config.APIKeyEnv)
-	}
-	fmt.Printf("      wire_api            = responses\n")
-	fmt.Println()
-	fmt.Printf("  Models (%d):\n", len(config.Models))
-	for _, m := range config.Models {
-		fmt.Printf("    - %s (priority %d)\n", m.Slug, m.Priority)
-	}
-	fmt.Println()
-	if backupPath != "" {
-		fmt.Println("  Tip: Restore previous config with:")
-		fmt.Printf("    cp %s %s\n", backupPath, codexConfigPath)
-	}
+	// fmt.Println("✓ Codex configuration updated")
+	// fmt.Println()
+	// fmt.Printf("  File:       %s\n", codexConfigPath)
+	// if backupPath != "" {
+	// 	fmt.Printf("  Backup:     %s\n", backupPath)
+	// }
+	// fmt.Printf("  Catalog:    %s\n", catalogPath)
+	// fmt.Println()
+	// fmt.Println("  Changes made:")
+	// fmt.Printf("    model_provider        = %s\n", providerName)
+	// fmt.Printf("    model_catalog_json    = %s\n", catalogPathAbs)
+	// fmt.Printf("    [model_providers.%s]\n", providerName)
+	// fmt.Printf("      name                = %s\n", providerName)
+	// fmt.Printf("      base_url            = %s\n", config.BaseURL())
+	// if config.APIKeyEnv != "" {
+	// 	fmt.Printf("      env_key             = %s\n", config.APIKeyEnv)
+	// }
+	// fmt.Printf("      wire_api            = responses\n")
+	// fmt.Println()
+	// fmt.Printf("  Models (%d):\n", len(config.Models))
+	// for _, m := range config.Models {
+	// 	fmt.Printf("    - %s (priority %d)\n", m.Slug, m.Priority)
+	// }
+	// fmt.Println()
+	// if backupPath != "" {
+	// 	fmt.Println("  Tip: Restore previous config with:")
+	// 	fmt.Printf("    cp %s %s\n", backupPath, codexConfigPath)
+	// }
 
 	return nil
 }
 
-func writeCatalog(path string, entries []ModelEntry) (string, error) {
+func writeCatalog(path string, entries []Model) (string, error) {
 	models := make([]catalogModel, 0, len(entries))
-	for _, e := range entries {
-		cm := catalogModel{
-			Slug:            e.Slug,
-			DisplayName:     e.DisplayName,
-			Priority:        e.Priority,
-			ShellType:       "shell_command",
-			Visibility:      "list",
-			SupportedInAPI:  true,
-			InputModalities: e.InputModalities,
-		}
-		if e.ContextWindow > 0 {
-			cm.ContextWindow = &e.ContextWindow
-		}
-		if e.DefaultReasoningEffort != "" {
-			val := e.DefaultReasoningEffort
-			cm.DefaultReasoningLevel = &val
-		}
-		cm.SupportedReasoningLevels = buildReasoningLevels(e.DefaultReasoningEffort)
+	// for _, e := range entries {
+	// 	cm := catalogModel{
+	// 		Slug:            e.Slug,
+	// 		DisplayName:     e.DisplayName,
+	// 		Priority:        e.Priority,
+	// 		ShellType:       "shell_command",
+	// 		Visibility:      "list",
+	// 		SupportedInAPI:  true,
+	// 		InputModalities: e.InputModalities,
+	// 	}
+	// 	if e.ContextWindow > 0 {
+	// 		cm.ContextWindow = &e.ContextWindow
+	// 	}
+	// 	if e.DefaultReasoningEffort != "" {
+	// 		val := e.DefaultReasoningEffort
+	// 		cm.DefaultReasoningLevel = &val
+	// 	}
+	// 	cm.SupportedReasoningLevels = buildReasoningLevels(e.DefaultReasoningEffort)
 
-		models = append(models, cm)
-	}
+	// 	models = append(models, cm)
+	// }
 
 	catalog := modelCatalog{Models: models}
 	data, err := json.MarshalIndent(catalog, "", "  ")
