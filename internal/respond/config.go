@@ -3,12 +3,10 @@ package respond
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync/atomic"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 )
 
@@ -29,14 +27,6 @@ type Model struct {
 
 var config atomic.Pointer[Config]
 
-func unmarshalConfig() (Config, error) {
-	var cfg Config
-	if err := viper.Unmarshal(&cfg); err != nil {
-		return Config{}, err
-	}
-	return cfg, nil
-}
-
 func InitConfig() error {
 	viper.SetConfigName("respond")
 	viper.SetConfigType("yaml")
@@ -55,25 +45,12 @@ func InitConfig() error {
 		}
 	}
 
-	cfg, err := unmarshalConfig()
-	if err != nil {
+	var cfg Config
+	if err := viper.Unmarshal(&cfg); err != nil {
 		return err
 	}
 	config.Store(&cfg)
 	return nil
-}
-
-func WatchConfig() {
-	viper.OnConfigChange(func(e fsnotify.Event) {
-		cfg, err := unmarshalConfig()
-		if err != nil {
-			slog.Error("config reload failed; keeping current config", "error", err)
-			return
-		}
-		config.Store(&cfg)
-		slog.Info("config reloaded", "file", e.Name)
-	})
-	viper.WatchConfig()
 }
 
 func (c *Config) BaseURL() string {
