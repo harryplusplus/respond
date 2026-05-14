@@ -76,67 +76,67 @@ func TestToSnakeCase(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:  "pascal case",
+			name:  "pascal_case",
 			input: "FooBar",
 			want:  "foo_bar",
 		},
 		{
-			name:  "camel case",
+			name:  "camel_case",
 			input: "fooBar",
 			want:  "foo_bar",
 		},
 		{
-			name:  "acronym then word",
+			name:  "acronym_then_word",
 			input: "FOOBar",
 			want:  "foo_bar",
 		},
 		{
-			name:  "word then acronym",
+			name:  "word_then_acronym",
 			input: "FooBAR",
 			want:  "foo_bar",
 		},
 		{
-			name:  "all caps",
+			name:  "all_caps",
 			input: "FOOBAR",
 			want:  "foobar",
 		},
 		{
-			name:  "single uppercase",
+			name:  "single_uppercase",
 			input: "F",
 			want:  "f",
 		},
 		{
-			name:  "single lowercase",
+			name:  "single_lowercase",
 			input: "f",
 			want:  "f",
 		},
 		{
-			name:  "with numbers",
+			name:  "with_numbers",
 			input: "Foo123Bar",
 			want:  "foo123_bar",
 		},
 		{
-			name:  "with trailing numbers",
+			name:  "with_trailing_numbers",
 			input: "FooBar123",
 			want:  "foo_bar123",
 		},
 		{
-			name:  "empty string",
+			name:  "empty_string",
 			input: "",
 			want:  "",
 		},
 		{
-			name:    "invalid character space",
+			name:    "invalid_character_space",
 			input:   "hello world",
 			wantErr: true,
 		},
 		{
-			name:    "invalid character hyphen",
+			name:    "invalid_character_hyphen",
 			input:   "foo-bar",
 			wantErr: true,
 		},
 		{
-			name:    "invalid character underscore",
+			name:    "invalid_character_underscore",
 			input:   "snake_case",
 			wantErr: true,
 		},
@@ -213,24 +213,24 @@ func TestCheckMapstructureTags(t *testing.T) {
 		ty       reflect.Type
 		wantErrs []string
 	}{
-		{name: "valid struct", ty: reflect.TypeFor[validStructAllTagged](), wantErrs: nil},
-		{name: "missing tag", ty: reflect.TypeFor[missingTagStruct](), wantErrs: []string{
+		{name: "valid_struct", ty: reflect.TypeFor[validStructAllTagged](), wantErrs: nil},
+		{name: "missing_tag", ty: reflect.TypeFor[missingTagStruct](), wantErrs: []string{
 			"field missingTagStruct.FieldTwo: disallow: missing mapstructure tag",
 		}},
-		{name: "wrong tag", ty: reflect.TypeFor[wrongTagStruct](), wantErrs: []string{
+		{name: "wrong_tag", ty: reflect.TypeFor[wrongTagStruct](), wantErrs: []string{
 			`field wrongTagStruct.FieldTwo: disallow: mapstructure key "wrong" does not match field name (expected "field_two")`,
 		}},
-		{name: "non-string map key", ty: reflect.TypeFor[nonStringMapKey](), wantErrs: []string{
+		{name: "non_string_map_key", ty: reflect.TypeFor[nonStringMapKey](), wantErrs: []string{
 			"field nonStringMapKey.Fields: disallow: map key type int (must be string)",
 		}},
-		{name: "disallowed kind ptr", ty: reflect.TypeFor[disallowedKindPtr](), wantErrs: []string{
+		{name: "disallowed_kind_ptr", ty: reflect.TypeFor[disallowedKindPtr](), wantErrs: []string{
 			"field: disallowedKindPtr.Data: disallow: kind ptr is not allowed",
 		}},
-		{name: "skip with - tag", ty: reflect.TypeFor[skipTagStruct](), wantErrs: nil},
-		{name: "unexported field skip", ty: reflect.TypeFor[unexportedFieldStruct](), wantErrs: nil},
-		{name: "nested valid struct", ty: reflect.TypeFor[nestedValidStruct](), wantErrs: nil},
-		{name: "slice of valid structs", ty: reflect.TypeFor[sliceValidStruct](), wantErrs: nil},
-		{name: "disallowed kind interface", ty: reflect.TypeFor[disallowedKindInterface](), wantErrs: []string{
+		{name: "skip_with_-_tag", ty: reflect.TypeFor[skipTagStruct](), wantErrs: nil},
+		{name: "unexported_field_skip", ty: reflect.TypeFor[unexportedFieldStruct](), wantErrs: nil},
+		{name: "nested_valid_struct", ty: reflect.TypeFor[nestedValidStruct](), wantErrs: nil},
+		{name: "slice_of_valid_structs", ty: reflect.TypeFor[sliceValidStruct](), wantErrs: nil},
+		{name: "disallowed_kind_interface", ty: reflect.TypeFor[disallowedKindInterface](), wantErrs: []string{
 			"field: disallowedKindInterface.Data: disallow: kind interface is not allowed",
 		}},
 	}
@@ -270,84 +270,84 @@ func TestParseConfig(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid default",
+			name: "valid_default",
 			cfg: Config{
 				Host: "localhost",
 				Port: 8080,
 			},
 		},
 		{
-			name: "valid ipv4",
+			name: "valid_ipv4",
 			cfg: Config{
 				Host: "127.0.0.1",
 				Port: 8080,
 			},
 		},
 		{
-			name: "valid all zeros",
+			name: "valid_all_zeros",
 			cfg: Config{
 				Host: "0.0.0.0",
 				Port: 8080,
 			},
 		},
 		{
-			name: "valid private ip",
+			name: "valid_private_ip",
 			cfg: Config{
 				Host: "192.168.1.1",
 				Port: 8080,
 			},
 		},
 		{
-			name: "valid port min",
+			name: "valid_port_min",
 			cfg: Config{
 				Host: "localhost",
 				Port: 1,
 			},
 		},
 		{
-			name: "valid port max",
+			name: "valid_port_max",
 			cfg: Config{
 				Host: "localhost",
 				Port: 65535,
 			},
 		},
 		{
-			name:    "empty host",
+			name:    "empty_host",
 			cfg:     Config{Host: "", Port: 8080},
 			wantErr: true,
 		},
 		{
-			name:    "hostname instead of ip",
+			name:    "hostname_instead_of_ip",
 			cfg:     Config{Host: "example.com", Port: 8080},
 			wantErr: true,
 		},
 		{
-			name:    "non ip string",
+			name:    "non_ip_string",
 			cfg:     Config{Host: "not-an-ip", Port: 8080},
 			wantErr: true,
 		},
 		{
-			name:    "invalid ip with spaces",
+			name:    "invalid_ip_with_spaces",
 			cfg:     Config{Host: " 192.168.1.1 ", Port: 8080},
 			wantErr: true,
 		},
 		{
-			name:    "port zero",
+			name:    "port_zero",
 			cfg:     Config{Host: "localhost", Port: 0},
 			wantErr: true,
 		},
 		{
-			name:    "port negative",
+			name:    "port_negative",
 			cfg:     Config{Host: "localhost", Port: -1},
 			wantErr: true,
 		},
 		{
-			name:    "port too high",
+			name:    "port_too_high",
 			cfg:     Config{Host: "localhost", Port: 65536},
 			wantErr: true,
 		},
 		{
-			name:    "port max int",
+			name:    "port_max_int",
 			cfg:     Config{Host: "localhost", Port: 999999},
 			wantErr: true,
 		},
