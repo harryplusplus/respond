@@ -9,10 +9,14 @@ import (
 
 func TestConfigMapstructureTags(t *testing.T) {
 	ty := reflect.TypeFor[Config]()
-	checkMapstructureTags(t, ty, ty.Name())
+	for _, err := range checkMapstructureTags(ty, ty.Name()) {
+		t.Error(err)
+	}
 }
 
-func checkMapstructureTags(t *testing.T, ty reflect.Type, path string) {
+func checkMapstructureTags(ty reflect.Type, path string) []error {
+	var errs []error
+
 	switch ty.Kind() {
 	case reflect.Struct:
 		for f := range ty.Fields() {
@@ -20,10 +24,10 @@ func checkMapstructureTags(t *testing.T, ty reflect.Type, path string) {
 				continue
 			}
 
-			path := fmt.Sprintf("%s.%s", path, f.Name)
+			fieldPath := fmt.Sprintf("%s.%s", path, f.Name)
 			tag := f.Tag.Get("mapstructure")
 			if tag == "" {
-				t.Errorf("field %s: missing mapstructure tag", path)
+				errs = append(errs, fmt.Errorf("field %s: disallow: missing mapstructure tag", fieldPath))
 				continue
 			}
 
@@ -33,33 +37,35 @@ func checkMapstructureTags(t *testing.T, ty reflect.Type, path string) {
 
 			expected, err := toSnakeCase(f.Name)
 			if err != nil {
-				t.Errorf("field %s: %v", path, err)
+				errs = append(errs, fmt.Errorf("field %s: disallow: %v", fieldPath, err))
 				continue
 			}
 
 			if tag != expected {
-				t.Errorf("field %s: mapstructure key %q does not match field name (expected %q)",
-					path, tag, expected)
+				errs = append(errs, fmt.Errorf("field %s: disallow: mapstructure key %q does not match field name (expected %q)",
+					fieldPath, tag, expected))
 			}
 
-			checkMapstructureTags(t, f.Type, path)
+			errs = append(errs, checkMapstructureTags(f.Type, fieldPath)...)
 		}
 	case reflect.Map:
 		if ty.Key().Kind() != reflect.String {
-			t.Errorf("field %s: invalid key type %s", path, ty.Key())
-			return
+			errs = append(errs, fmt.Errorf("field %s: disallow: map key type %s (must be string)", path, ty.Key()))
+			return errs
 		}
-		checkMapstructureTags(t, ty.Elem(), path)
+		errs = append(errs, checkMapstructureTags(ty.Elem(), path)...)
 	case reflect.Slice:
-		checkMapstructureTags(t, ty.Elem(), path)
+		errs = append(errs, checkMapstructureTags(ty.Elem(), path)...)
 	case reflect.Bool, reflect.String, reflect.Int, reflect.Int8, reflect.Int16,
 		reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8,
 		reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float32,
 		reflect.Float64:
 		// noop
 	default:
-		t.Errorf("field: %s: unexpected kind: %s", path, ty.Kind())
+		errs = append(errs, fmt.Errorf("field: %s: disallow: kind %s is not allowed", path, ty.Kind()))
 	}
+
+	return errs
 }
 
 func TestToSnakeCase(t *testing.T) {
@@ -153,6 +159,108 @@ func TestToSnakeCase(t *testing.T) {
 			}
 		})
 	}
+}
+
+// -- test helpers for TestCheckMapstructureTags --
+
+type _validStructAllTagged struct {
+	FieldOne string `mapstructure:"field_one"`
+	FieldTwo int    `mapstructure:"field_two"`
+}
+
+type _missingTagStruct struct {
+	FieldOne string `mapstructure:"field_one"`
+	FieldTwo int
+}
+
+type _wrongTagStruct struct {
+	FieldOne string `mapstructure:"field_one"`
+	FieldTwo int    `mapstructure:"wrong"`
+}
+
+type _nonStringMapKey struct {
+	Fields map[int]string `mapstructure:"fields"`
+}
+
+type _disallowedKindPtr struct {
+	Data *string `mapstructure:"data"`
+}
+
+type _skipTagStruct struct {
+	FieldOne string `mapstructure:"-"`
+}
+
+type _unexportedFieldStruct struct {
+	FieldOne string `mapstructure:"field_one"`
+	internal int
+}
+
+type _nestedValidStruct struct {
+	Inner _validStructAllTagged `mapstructure:"inner"`
+}
+
+type _sliceValidStruct struct {
+	Items []_validStructAllTagged `mapstructure:"items"`
+}
+
+type _disallowedKindInterface struct {
+	Data any `mapstructure:"data"`
+}
+
+func TestCheckMapstructureTags(t *testing.T) {
+	tests := []struct {
+		name     string
+		ty       reflect.Type
+		wantErrs []string
+	}{
+		{name: "valid struct", ty: reflect.TypeFor[_validStructAllTagged](), wantErrs: nil},
+		{name: "missing tag", ty: reflect.TypeFor[_missingTagStruct](), wantErrs: []string{
+			"field _missingTagStruct.FieldTwo: disallow: missing mapstructure tag",
+		}},
+		{name: "wrong tag", ty: reflect.TypeFor[_wrongTagStruct](), wantErrs: []string{
+			`field _wrongTagStruct.FieldTwo: disallow: mapstructure key "wrong" does not match field name (expected "field_two")`,
+		}},
+		{name: "non-string map key", ty: reflect.TypeFor[_nonStringMapKey](), wantErrs: []string{
+			"field _nonStringMapKey.Fields: disallow: map key type int (must be string)",
+		}},
+		{name: "disallowed kind ptr", ty: reflect.TypeFor[_disallowedKindPtr](), wantErrs: []string{
+			"field: _disallowedKindPtr.Data: disallow: kind ptr is not allowed",
+		}},
+		{name: "skip with - tag", ty: reflect.TypeFor[_skipTagStruct](), wantErrs: nil},
+		{name: "unexported field skip", ty: reflect.TypeFor[_unexportedFieldStruct](), wantErrs: nil},
+		{name: "nested valid struct", ty: reflect.TypeFor[_nestedValidStruct](), wantErrs: nil},
+		{name: "slice of valid structs", ty: reflect.TypeFor[_sliceValidStruct](), wantErrs: nil},
+		{name: "disallowed kind interface", ty: reflect.TypeFor[_disallowedKindInterface](), wantErrs: []string{
+			"field: _disallowedKindInterface.Data: disallow: kind interface is not allowed",
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := checkMapstructureTags(tt.ty, tt.ty.Name())
+			if len(errs) != len(tt.wantErrs) {
+				t.Fatalf("got %d errors, want %d\n%s", len(errs), len(tt.wantErrs), formatErrors(errs))
+			}
+			for i, err := range errs {
+				if err.Error() != tt.wantErrs[i] {
+					t.Errorf("error %d:\ngot:  %s\nwant: %s", i, err.Error(), tt.wantErrs[i])
+				}
+			}
+		})
+	}
+}
+
+func formatErrors(errs []error) string {
+	if len(errs) == 0 {
+		return "(none)"
+	}
+	var b strings.Builder
+	for _, err := range errs {
+		b.WriteString("  - ")
+		b.WriteString(err.Error())
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 func toSnakeCase(s string) (string, error) {
