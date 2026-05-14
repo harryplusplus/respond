@@ -64,7 +64,7 @@ func runCodexConfig(cfg *Config) error {
 }
 
 func RunCodexConfig() error {
-	return runCodexConfig(Cfg.Load())
+	return runCodexConfig(config.Load())
 }
 
 func codexModelProvider(cfg map[string]any) string {

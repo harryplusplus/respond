@@ -27,5 +27,5 @@ func runServer(cfg *Config) error {
 }
 
 func RunServer() error {
-	return runServer(Cfg.Load())
+	return runServer(config.Load())
 }

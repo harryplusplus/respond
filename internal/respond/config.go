@@ -26,7 +26,7 @@ type Provider struct {
 type Model struct {
 }
 
-var Cfg atomic.Pointer[Config]
+var config atomic.Pointer[Config]
 
 const respondHomeEnv = "RESPOND_HOME"
 
@@ -81,7 +81,7 @@ func InitConfig() error {
 	if err != nil {
 		return err
 	}
-	Cfg.Store(cfg)
+	config.Store(cfg)
 	return nil
 }
 
