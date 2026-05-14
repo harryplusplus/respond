@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
@@ -26,9 +27,9 @@ type Provider struct {
 type Model struct {
 }
 
-var config Config
+var config atomic.Pointer[Config]
 
-func loadConfig() (Config, error) {
+func unmarshalConfig() (Config, error) {
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return Config{}, err
@@ -54,22 +55,22 @@ func InitConfig() error {
 		}
 	}
 
-	cfg, err := loadConfig()
+	cfg, err := unmarshalConfig()
 	if err != nil {
 		return err
 	}
-	config = cfg
+	config.Store(&cfg)
 	return nil
 }
 
 func WatchConfig() {
 	viper.OnConfigChange(func(e fsnotify.Event) {
-		cfg, err := loadConfig()
+		cfg, err := unmarshalConfig()
 		if err != nil {
 			slog.Error("config reload failed; keeping current config", "error", err)
 			return
 		}
-		config = cfg
+		config.Store(&cfg)
 		slog.Info("config reloaded", "file", e.Name)
 	})
 	viper.WatchConfig()
