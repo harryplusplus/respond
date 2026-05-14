@@ -58,6 +58,99 @@ func checkMapstructureTags(t *testing.T, ty reflect.Type, path string) {
 	}
 }
 
+func TestToSnakeCase(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:  "pascal_case",
+			input: "FooBar",
+			want:  "foo_bar",
+		},
+		{
+			name:  "camel_case",
+			input: "fooBar",
+			want:  "foo_bar",
+		},
+		{
+			name:  "acronym_then_word",
+			input: "FOOBar",
+			want:  "foo_bar",
+		},
+		{
+			name:  "word_then_acronym",
+			input: "FooBAR",
+			want:  "foo_bar",
+		},
+		{
+			name:  "all_caps",
+			input: "FOOBAR",
+			want:  "foobar",
+		},
+		{
+			name:  "single_uppercase",
+			input: "F",
+			want:  "f",
+		},
+		{
+			name:  "single_lowercase",
+			input: "f",
+			want:  "f",
+		},
+		{
+			name:  "with_numbers",
+			input: "Foo123Bar",
+			want:  "foo123_bar",
+		},
+		{
+			name:  "with_trailing_numbers",
+			input: "FooBar123",
+			want:  "foo_bar123",
+		},
+		{
+			name:  "empty_string",
+			input: "",
+			want:  "",
+		},
+		{
+			name:    "invalid_character_space",
+			input:   "hello world",
+			wantErr: true,
+		},
+		{
+			name:    "invalid_character_hyphen",
+			input:   "foo-bar",
+			wantErr: true,
+		},
+		{
+			name:    "invalid_character_underscore",
+			input:   "snake_case",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := toSnakeCase(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("toSnakeCase(%q) expected error, got %q", tt.input, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("toSnakeCase(%q) unexpected error: %v", tt.input, err)
+			}
+			if got != tt.want {
+				t.Errorf("toSnakeCase(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func toSnakeCase(s string) (string, error) {
 	var b strings.Builder
 	b.Grow(len(s))
