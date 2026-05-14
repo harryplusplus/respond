@@ -23,7 +23,8 @@ type Provider struct {
 	Models  map[string]Model `mapstructure:"models"`
 }
 
-type Model struct{}
+type Model struct {
+}
 
 var config Config
 

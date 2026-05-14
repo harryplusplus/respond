@@ -1,9 +1,87 @@
 package respond
 
 import (
+	"fmt"
+	"reflect"
+	"strings"
 	"testing"
 )
 
 func TestConfigMapstructureTags(t *testing.T) {
-	CheckMapstructureTags(t, Config{}, "")
+	ty := reflect.TypeFor[Config]()
+	checkMapstructureTags(t, ty, ty.Name())
+}
+
+func checkMapstructureTags(t *testing.T, ty reflect.Type, path string) {
+	switch ty.Kind() {
+	case reflect.Struct:
+		for f := range ty.Fields() {
+			path := fmt.Sprintf("%s.%s", path, f.Name)
+			tag := f.Tag.Get("mapstructure")
+			if tag == "" {
+				t.Errorf("field %s: missing mapstructure tag", path)
+				continue
+			}
+
+			if tag == "-" {
+				continue
+			}
+
+			expected, err := toSnakeCase(f.Name)
+			if err != nil {
+				t.Errorf("field %s: %v", path, err)
+				continue
+			}
+
+			if tag != expected {
+				t.Errorf("field %s: mapstructure key %q does not match field name (expected %q)",
+					path, tag, expected)
+			}
+
+			checkMapstructureTags(t, f.Type, path)
+		}
+	case reflect.Map:
+		if ty.Key().Kind() != reflect.String {
+			t.Errorf("field %s: invalid key type %s", path, ty.Key())
+			return
+		}
+		checkMapstructureTags(t, ty.Elem(), path)
+	case reflect.Slice:
+		checkMapstructureTags(t, ty.Elem(), path)
+	case reflect.Bool, reflect.String, reflect.Int, reflect.Int8, reflect.Int16,
+		reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8,
+		reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float32,
+		reflect.Float64:
+		// noop
+	default:
+		t.Errorf("field: %s: unexpected kind: %s", path, ty.Kind())
+	}
+}
+
+func toSnakeCase(s string) (string, error) {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'A' && c <= 'Z':
+			if i > 0 {
+				prev := s[i-1]
+				next := byte(0)
+				if i+1 < len(s) {
+					next = s[i+1]
+				}
+				// e.g.) Fo(oBa)r, FO(OBa)r, Fo(oBA)R -> foo_bar
+				if (prev >= 'a' && prev <= 'z') || (next >= 'a' && next <= 'z') {
+					b.WriteByte('_')
+				}
+			}
+			b.WriteByte(c + 32) // to lowercase
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+			b.WriteByte(c)
+		default:
+			return "", fmt.Errorf("invalid character %q in field name %q", c, s)
+		}
+	}
+	return b.String(), nil
 }
