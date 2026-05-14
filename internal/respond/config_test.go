@@ -76,67 +76,67 @@ func TestToSnakeCase(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:  "pascal_case",
+			name:  "pascal case",
 			input: "FooBar",
 			want:  "foo_bar",
 		},
 		{
-			name:  "camel_case",
+			name:  "camel case",
 			input: "fooBar",
 			want:  "foo_bar",
 		},
 		{
-			name:  "acronym_then_word",
+			name:  "acronym then word",
 			input: "FOOBar",
 			want:  "foo_bar",
 		},
 		{
-			name:  "word_then_acronym",
+			name:  "word then acronym",
 			input: "FooBAR",
 			want:  "foo_bar",
 		},
 		{
-			name:  "all_caps",
+			name:  "all caps",
 			input: "FOOBAR",
 			want:  "foobar",
 		},
 		{
-			name:  "single_uppercase",
+			name:  "single uppercase",
 			input: "F",
 			want:  "f",
 		},
 		{
-			name:  "single_lowercase",
+			name:  "single lowercase",
 			input: "f",
 			want:  "f",
 		},
 		{
-			name:  "with_numbers",
+			name:  "with numbers",
 			input: "Foo123Bar",
 			want:  "foo123_bar",
 		},
 		{
-			name:  "with_trailing_numbers",
+			name:  "with trailing numbers",
 			input: "FooBar123",
 			want:  "foo_bar123",
 		},
 		{
-			name:  "empty_string",
+			name:  "empty string",
 			input: "",
 			want:  "",
 		},
 		{
-			name:    "invalid_character_space",
+			name:    "invalid character space",
 			input:   "hello world",
 			wantErr: true,
 		},
 		{
-			name:    "invalid_character_hyphen",
+			name:    "invalid character hyphen",
 			input:   "foo-bar",
 			wantErr: true,
 		},
 		{
-			name:    "invalid_character_underscore",
+			name:    "invalid character underscore",
 			input:   "snake_case",
 			wantErr: true,
 		},
@@ -261,6 +261,112 @@ func formatErrors(errs []error) string {
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+func TestParseConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     Config
+		wantErr bool
+	}{
+		{
+			name: "valid default",
+			cfg: Config{
+				Host: "localhost",
+				Port: 8080,
+			},
+		},
+		{
+			name: "valid ipv4",
+			cfg: Config{
+				Host: "127.0.0.1",
+				Port: 8080,
+			},
+		},
+		{
+			name: "valid all zeros",
+			cfg: Config{
+				Host: "0.0.0.0",
+				Port: 8080,
+			},
+		},
+		{
+			name: "valid private ip",
+			cfg: Config{
+				Host: "192.168.1.1",
+				Port: 8080,
+			},
+		},
+		{
+			name: "valid port min",
+			cfg: Config{
+				Host: "localhost",
+				Port: 1,
+			},
+		},
+		{
+			name: "valid port max",
+			cfg: Config{
+				Host: "localhost",
+				Port: 65535,
+			},
+		},
+		{
+			name:    "empty host",
+			cfg:     Config{Host: "", Port: 8080},
+			wantErr: true,
+		},
+		{
+			name:    "hostname instead of ip",
+			cfg:     Config{Host: "example.com", Port: 8080},
+			wantErr: true,
+		},
+		{
+			name:    "non ip string",
+			cfg:     Config{Host: "not-an-ip", Port: 8080},
+			wantErr: true,
+		},
+		{
+			name:    "invalid ip with spaces",
+			cfg:     Config{Host: " 192.168.1.1 ", Port: 8080},
+			wantErr: true,
+		},
+		{
+			name:    "port zero",
+			cfg:     Config{Host: "localhost", Port: 0},
+			wantErr: true,
+		},
+		{
+			name:    "port negative",
+			cfg:     Config{Host: "localhost", Port: -1},
+			wantErr: true,
+		},
+		{
+			name:    "port too high",
+			cfg:     Config{Host: "localhost", Port: 65536},
+			wantErr: true,
+		},
+		{
+			name:    "port max int",
+			cfg:     Config{Host: "localhost", Port: 999999},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := parseConfig(&tt.cfg)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("parseConfig(%+v) expected error, got nil", tt.cfg)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("parseConfig(%+v) unexpected error: %v", tt.cfg, err)
+			}
+		})
+	}
 }
 
 func toSnakeCase(s string) (string, error) {

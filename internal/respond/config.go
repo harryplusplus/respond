@@ -3,6 +3,7 @@ package respond
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -26,10 +27,6 @@ type Model struct {
 }
 
 var config atomic.Pointer[Config]
-
-func parseConfig(cfg *Config) error {
-	return nil
-}
 
 func InitConfig() error {
 	viper.SetConfigName("respond")
@@ -62,4 +59,17 @@ func InitConfig() error {
 
 func (c *Config) BaseURL() string {
 	return fmt.Sprintf("http://%s:%d", c.Host, c.Port)
+}
+
+func parseConfig(cfg *Config) error {
+	if cfg.Host != "localhost" {
+		ip := net.ParseIP(cfg.Host)
+		if ip == nil || ip.To4() == nil {
+			return fmt.Errorf("host must be valid IPv4 address or localhost, got %q", cfg.Host)
+		}
+	}
+	if cfg.Port < 1 || cfg.Port > 65535 {
+		return fmt.Errorf("port must be between 1 and 65535, got %d", cfg.Port)
+	}
+	return nil
 }
