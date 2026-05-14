@@ -1,5 +1,7 @@
 # 👺 Goblin
 
+Use Codex with any OpenAI-compatible provider.
+
 Codex의 Responses API(Streaming)를 OpenAI Compatibility API로 변환하는 리버스 프록시 서버입니다.
 
 ## 왜 이 프로젝트를 만드나요?
