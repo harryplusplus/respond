@@ -48,25 +48,26 @@ func respondConfigPath(dir string) string {
 }
 
 func InitConfig() error {
-	viper.SetConfigName("respond")
-	viper.SetConfigType("yaml")
-	viper.SetDefault("host", "localhost")
-	viper.SetDefault("port", 8080)
+	v := viper.New()
+	v.SetConfigName("respond")
+	v.SetConfigType("yaml")
+	v.SetDefault("host", "localhost")
+	v.SetDefault("port", 8080)
 
 	dir, err := respondDir()
 	if err != nil {
 		return err
 	}
-	viper.AddConfigPath(dir)
+	v.AddConfigPath(dir)
 
-	if err := viper.ReadInConfig(); err != nil {
+	if err := v.ReadInConfig(); err != nil {
 		if _, ok := errors.AsType[viper.ConfigFileNotFoundError](err); !ok {
 			return err
 		}
 	}
 
 	var cfg Config
-	if err := viper.Unmarshal(&cfg); err != nil {
+	if err := v.Unmarshal(&cfg); err != nil {
 		return err
 	}
 	if err := parseConfig(&cfg); err != nil {

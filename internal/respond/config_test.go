@@ -2,6 +2,8 @@ package respond
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -261,6 +263,55 @@ func formatErrors(errs []error) string {
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+func TestRespondDir(t *testing.T) {
+	t.Run("env_set", func(t *testing.T) {
+		t.Setenv(respondHomeEnv, "/custom/path")
+		got, err := respondDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "/custom/path" {
+			t.Errorf("respondDir() = %q, want %q", got, "/custom/path")
+		}
+	})
+
+	t.Run("env_unset", func(t *testing.T) {
+		t.Setenv(respondHomeEnv, "")
+		got, err := respondDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		home, _ := os.UserHomeDir()
+		want := filepath.Join(home, ".respond")
+		if got != want {
+			t.Errorf("respondDir() = %q, want %q", got, want)
+		}
+	})
+}
+
+func TestBaseURL(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{name: "localhost_default", cfg: Config{Host: "localhost", Port: 8080}, want: "http://localhost:8080"},
+		{name: "ipv4", cfg: Config{Host: "127.0.0.1", Port: 8080}, want: "http://127.0.0.1:8080"},
+		{name: "all_zeros", cfg: Config{Host: "0.0.0.0", Port: 9999}, want: "http://0.0.0.0:9999"},
+		{name: "port_one", cfg: Config{Host: "localhost", Port: 1}, want: "http://localhost:1"},
+		{name: "port_max", cfg: Config{Host: "localhost", Port: 65535}, want: "http://localhost:65535"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.cfg.BaseURL()
+			if got != tt.want {
+				t.Errorf("Config{Host: %q, Port: %d}.BaseURL() = %q, want %q", tt.cfg.Host, tt.cfg.Port, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestParseConfig(t *testing.T) {
