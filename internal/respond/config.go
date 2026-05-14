@@ -30,6 +30,19 @@ var config atomic.Pointer[Config]
 
 const respondHomeEnv = "RESPOND_HOME"
 
+func respondDir() (string, error) {
+	home := os.Getenv(respondHomeEnv)
+	if home != "" {
+		return home, nil
+	}
+
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine user home directory: %w", err)
+	}
+	return filepath.Join(dir, ".respond"), nil
+}
+
 func respondConfigPath(dir string) string {
 	return filepath.Join(dir, "respond.yaml")
 }
@@ -40,11 +53,11 @@ func InitConfig() error {
 	viper.SetDefault("host", "localhost")
 	viper.SetDefault("port", 8080)
 
-	if home := os.Getenv(respondHomeEnv); home != "" {
-		viper.AddConfigPath(home)
-	} else if dir, err := os.UserHomeDir(); err == nil {
-		viper.AddConfigPath(filepath.Join(dir, ".respond"))
+	dir, err := respondDir()
+	if err != nil {
+		return err
 	}
+	viper.AddConfigPath(dir)
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := errors.AsType[viper.ConfigFileNotFoundError](err); !ok {
