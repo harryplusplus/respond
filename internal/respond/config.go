@@ -51,7 +51,7 @@ func loadConfig() (*Config, error) {
 	v := viper.New()
 	v.SetConfigName("respond")
 	v.SetConfigType("yaml")
-	v.SetDefault("address", "0.0.0.0:8080")
+	v.SetDefault("address", "localhost:8080")
 
 	dir, err := respondDir()
 	if err != nil {

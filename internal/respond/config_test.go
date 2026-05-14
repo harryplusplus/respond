@@ -339,8 +339,8 @@ func TestLoadConfig(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if cfg.Address != "0.0.0.0:8080" {
-			t.Errorf("default Address = %q, want %q", cfg.Address, "0.0.0.0:8080")
+		if cfg.Address != "localhost:8080" {
+			t.Errorf("default Address = %q, want %q", cfg.Address, "localhost:8080")
 		}
 	})
 
