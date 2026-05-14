@@ -6,7 +6,7 @@ import (
 
 var configCmd = &cobra.Command{
 	Use:   "config",
-	Short: "Manage Respond configuration",
+	Short: "Manage Goblin configuration",
 }
 
 func init() {

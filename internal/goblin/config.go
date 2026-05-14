@@ -1,4 +1,4 @@
-package respond
+package goblin
 
 import (
 	"fmt"
@@ -25,12 +25,12 @@ type Provider struct {
 var config atomic.Pointer[Config]
 
 const (
-	respondHomeEnv = "RESPOND_HOME"
+	goblinHomeEnv  = "GOBLIN_HOME"
 	defaultAddress = "localhost:8080"
 )
 
-func respondDir() (string, error) {
-	home := os.Getenv(respondHomeEnv)
+func goblinDir() (string, error) {
+	home := os.Getenv(goblinHomeEnv)
 	if home != "" {
 		return home, nil
 	}
@@ -39,22 +39,22 @@ func respondDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cannot determine user home directory: %w", err)
 	}
-	return filepath.Join(dir, ".respond"), nil
+	return filepath.Join(dir, ".goblin"), nil
 }
 
-func respondConfigPath(dir string) string {
-	return filepath.Join(dir, "respond.yaml")
+func goblinConfigPath(dir string) string {
+	return filepath.Join(dir, "goblin.yaml")
 }
 
 func loadConfig() (*Config, error) {
-	dir, err := respondDir()
+	dir, err := goblinDir()
 	if err != nil {
 		return nil, err
 	}
 
 	cfg := &Config{}
 
-	data, err := os.ReadFile(respondConfigPath(dir))
+	data, err := os.ReadFile(goblinConfigPath(dir))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}

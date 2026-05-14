@@ -1,4 +1,4 @@
-package respond
+package goblin
 
 import (
 	"fmt"
@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	codexHomeEnv      = "CODEX_HOME"
-	respondProviderID = "respond"
+	codexHomeEnv     = "CODEX_HOME"
+	goblinProviderID = "goblin"
 )
 
 func codexConfigPath(dir string) string {
@@ -36,7 +36,7 @@ func runCodexConfig(cfg *Config) error {
 
 	baseURL := cfg.baseURL()
 
-	if !applyRespondConfig(codexCfg, baseURL) {
+	if !applyGoblinConfig(codexCfg, baseURL) {
 		fmt.Printf("%s: already up to date\n", codexCfgPath)
 		return nil
 	}
@@ -56,8 +56,8 @@ func runCodexConfig(cfg *Config) error {
 	}
 
 	fmt.Printf("%s: updated\n", codexCfgPath)
-	fmt.Printf("  model_provider = %s\n", respondProviderID)
-	fmt.Printf("  model_providers.respond.base_url = %s\n", baseURL)
+	fmt.Printf("  model_provider = %s\n", goblinProviderID)
+	fmt.Printf("  model_providers.goblin.base_url = %s\n", baseURL)
 	fmt.Printf("  backup: %s\n", codexBakPath)
 
 	return nil
@@ -99,15 +99,15 @@ func setCodexProviderBaseURL(p map[string]any, v string) {
 	p["base_url"] = v
 }
 
-func applyRespondConfig(cfg map[string]any, baseURL string) bool {
+func applyGoblinConfig(cfg map[string]any, baseURL string) bool {
 	var changed bool
 
-	if codexModelProvider(cfg) != respondProviderID {
-		setCodexModelProvider(cfg, respondProviderID)
+	if codexModelProvider(cfg) != goblinProviderID {
+		setCodexModelProvider(cfg, goblinProviderID)
 		changed = true
 	}
 
-	p := codexProvider(cfg, respondProviderID)
+	p := codexProvider(cfg, goblinProviderID)
 	if codexProviderBaseURL(p) != baseURL {
 		setCodexProviderBaseURL(p, baseURL)
 		changed = true

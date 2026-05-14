@@ -1,4 +1,4 @@
-package respond
+package goblin
 
 type ReasoningEffort string
 

@@ -1,4 +1,4 @@
-package respond
+package goblin
 
 import (
 	"os"
@@ -20,14 +20,14 @@ func setupCodexConfig(t *testing.T, codexHome string, cfg map[string]any) string
 	return path
 }
 
-func initRespondConfig(t *testing.T, address string) *Config {
+func initGoblinConfig(t *testing.T, address string) *Config {
 	t.Helper()
-	respondHome := t.TempDir()
+	goblinHome := t.TempDir()
 	data := []byte("address: " + address + "\n")
-	if err := os.WriteFile(respondConfigPath(respondHome), data, 0644); err != nil {
+	if err := os.WriteFile(goblinConfigPath(goblinHome), data, 0644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(respondHomeEnv, respondHome)
+	t.Setenv(goblinHomeEnv, goblinHome)
 	cfg, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func assertCodexConfig(t *testing.T, path string, wantMap map[string]any) {
 	}
 }
 
-func TestApplyRespondConfig(t *testing.T) {
+func TestApplyGoblinConfig(t *testing.T) {
 	tests := []struct {
 		name    string
 		cfg     map[string]any
@@ -83,9 +83,9 @@ func TestApplyRespondConfig(t *testing.T) {
 		{
 			name: "already_correct",
 			cfg: map[string]any{
-				"model_provider": "respond",
+				"model_provider": "goblin",
 				"model_providers": map[string]any{
-					"respond": map[string]any{
+					"goblin": map[string]any{
 						"base_url": "http://0.0.0.0:9999",
 					},
 				},
@@ -97,7 +97,7 @@ func TestApplyRespondConfig(t *testing.T) {
 			name: "missing_model_provider",
 			cfg: map[string]any{
 				"model_providers": map[string]any{
-					"respond": map[string]any{
+					"goblin": map[string]any{
 						"base_url": "http://0.0.0.0:9999",
 					},
 				},
@@ -105,8 +105,8 @@ func TestApplyRespondConfig(t *testing.T) {
 			baseURL: "http://0.0.0.0:9999",
 			want:    true,
 			check: func(t *testing.T, cfg map[string]any) {
-				if codexModelProvider(cfg) != respondProviderID {
-					t.Errorf(`model_provider = %q, want "respond"`, codexModelProvider(cfg))
+				if codexModelProvider(cfg) != goblinProviderID {
+					t.Errorf(`model_provider = %q, want "goblin"`, codexModelProvider(cfg))
 				}
 			},
 		},
@@ -115,7 +115,7 @@ func TestApplyRespondConfig(t *testing.T) {
 			cfg: map[string]any{
 				"model_provider": "foo",
 				"model_providers": map[string]any{
-					"respond": map[string]any{
+					"goblin": map[string]any{
 						"base_url": "http://0.0.0.0:9999",
 					},
 				},
@@ -123,28 +123,28 @@ func TestApplyRespondConfig(t *testing.T) {
 			baseURL: "http://0.0.0.0:9999",
 			want:    true,
 			check: func(t *testing.T, cfg map[string]any) {
-				if codexModelProvider(cfg) != respondProviderID {
-					t.Errorf(`model_provider = %q, want "respond"`, codexModelProvider(cfg))
+				if codexModelProvider(cfg) != goblinProviderID {
+					t.Errorf(`model_provider = %q, want "goblin"`, codexModelProvider(cfg))
 				}
 			},
 		},
 		{
 			name: "missing_model_providers_map",
 			cfg: map[string]any{
-				"model_provider": "respond",
+				"model_provider": "goblin",
 			},
 			baseURL: "http://0.0.0.0:9999",
 			want:    true,
 			check: func(t *testing.T, cfg map[string]any) {
-				if codexProviderBaseURL(codexProvider(cfg, respondProviderID)) != "http://0.0.0.0:9999" {
-					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, codexProviderBaseURL(codexProvider(cfg, respondProviderID)))
+				if codexProviderBaseURL(codexProvider(cfg, goblinProviderID)) != "http://0.0.0.0:9999" {
+					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, codexProviderBaseURL(codexProvider(cfg, goblinProviderID)))
 				}
 			},
 		},
 		{
-			name: "missing_respond_entry",
+			name: "missing_goblin_entry",
 			cfg: map[string]any{
-				"model_provider": "respond",
+				"model_provider": "goblin",
 				"model_providers": map[string]any{
 					"foo": map[string]any{
 						"base_url": "http://localhost:4444",
@@ -154,17 +154,17 @@ func TestApplyRespondConfig(t *testing.T) {
 			baseURL: "http://0.0.0.0:9999",
 			want:    true,
 			check: func(t *testing.T, cfg map[string]any) {
-				if codexProviderBaseURL(codexProvider(cfg, respondProviderID)) != "http://0.0.0.0:9999" {
-					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, codexProviderBaseURL(codexProvider(cfg, respondProviderID)))
+				if codexProviderBaseURL(codexProvider(cfg, goblinProviderID)) != "http://0.0.0.0:9999" {
+					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, codexProviderBaseURL(codexProvider(cfg, goblinProviderID)))
 				}
 			},
 		},
 		{
 			name: "wrong_base_url",
 			cfg: map[string]any{
-				"model_provider": "respond",
+				"model_provider": "goblin",
 				"model_providers": map[string]any{
-					"respond": map[string]any{
+					"goblin": map[string]any{
 						"base_url": "http://localhost:8080",
 					},
 				},
@@ -172,8 +172,8 @@ func TestApplyRespondConfig(t *testing.T) {
 			baseURL: "http://0.0.0.0:9999",
 			want:    true,
 			check: func(t *testing.T, cfg map[string]any) {
-				if codexProviderBaseURL(codexProvider(cfg, respondProviderID)) != "http://0.0.0.0:9999" {
-					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, codexProviderBaseURL(codexProvider(cfg, respondProviderID)))
+				if codexProviderBaseURL(codexProvider(cfg, goblinProviderID)) != "http://0.0.0.0:9999" {
+					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, codexProviderBaseURL(codexProvider(cfg, goblinProviderID)))
 				}
 			},
 		},
@@ -185,11 +185,11 @@ func TestApplyRespondConfig(t *testing.T) {
 			baseURL: "http://0.0.0.0:9999",
 			want:    true,
 			check: func(t *testing.T, cfg map[string]any) {
-				if codexModelProvider(cfg) != respondProviderID {
-					t.Errorf(`model_provider = %q, want "respond"`, codexModelProvider(cfg))
+				if codexModelProvider(cfg) != goblinProviderID {
+					t.Errorf(`model_provider = %q, want "goblin"`, codexModelProvider(cfg))
 				}
-				if codexProviderBaseURL(codexProvider(cfg, respondProviderID)) != "http://0.0.0.0:9999" {
-					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, codexProviderBaseURL(codexProvider(cfg, respondProviderID)))
+				if codexProviderBaseURL(codexProvider(cfg, goblinProviderID)) != "http://0.0.0.0:9999" {
+					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, codexProviderBaseURL(codexProvider(cfg, goblinProviderID)))
 				}
 			},
 		},
@@ -197,9 +197,9 @@ func TestApplyRespondConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := applyRespondConfig(tt.cfg, tt.baseURL)
+			got := applyGoblinConfig(tt.cfg, tt.baseURL)
 			if got != tt.want {
-				t.Errorf("applyRespondConfig = %v, want %v", got, tt.want)
+				t.Errorf("applyGoblinConfig = %v, want %v", got, tt.want)
 			}
 			if tt.check != nil {
 				tt.check(t, tt.cfg)
@@ -219,7 +219,7 @@ func TestRunCodexConfig_UpdatesWhenMissingProvider(t *testing.T) {
 		},
 	})
 	t.Setenv(codexHomeEnv, codexHome)
-	cfg := initRespondConfig(t, "0.0.0.0:9999")
+	cfg := initGoblinConfig(t, "0.0.0.0:9999")
 
 	if err := runCodexConfig(cfg); err != nil {
 		t.Fatal(err)
@@ -231,7 +231,7 @@ func TestRunCodexConfig_UpdatesWhenMissingProvider(t *testing.T) {
 	}
 
 	assertCodexConfig(t, codexConfigPath(codexHome), map[string]any{
-		"model_provider": "respond",
+		"model_provider": "goblin",
 	})
 }
 
@@ -241,28 +241,28 @@ func TestRunCodexConfig_UpdatesWhenWrongProvider(t *testing.T) {
 		"model":          "bar",
 		"model_provider": "foo",
 		"model_providers": map[string]any{
-			"respond": map[string]any{
+			"goblin": map[string]any{
 				"base_url": "http://localhost:8080",
 			},
 		},
 	})
 	t.Setenv(codexHomeEnv, codexHome)
-	cfg := initRespondConfig(t, "127.0.0.1:8081")
+	cfg := initGoblinConfig(t, "127.0.0.1:8081")
 
 	if err := runCodexConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 
 	assertCodexConfig(t, codexConfigPath(codexHome), map[string]any{
-		"model_provider": "respond",
+		"model_provider": "goblin",
 		"model":          "bar",
 	})
 
 	data, _ := os.ReadFile(codexConfigPath(codexHome))
 	var result map[string]any
 	toml.Unmarshal(data, &result)
-	if codexProviderBaseURL(codexProvider(result, respondProviderID)) != "http://127.0.0.1:8081" {
-		t.Errorf("base_url = %v, want http://127.0.0.1:8081", codexProviderBaseURL(codexProvider(result, respondProviderID)))
+	if codexProviderBaseURL(codexProvider(result, goblinProviderID)) != "http://127.0.0.1:8081" {
+		t.Errorf("base_url = %v, want http://127.0.0.1:8081", codexProviderBaseURL(codexProvider(result, goblinProviderID)))
 	}
 }
 
@@ -270,16 +270,16 @@ func TestRunCodexConfig_SkipsWriteWhenAlreadyCorrect(t *testing.T) {
 	codexHome := t.TempDir()
 	initial := map[string]any{
 		"model":          "bar",
-		"model_provider": "respond",
+		"model_provider": "goblin",
 		"model_providers": map[string]any{
-			"respond": map[string]any{
+			"goblin": map[string]any{
 				"base_url": "http://0.0.0.0:9999",
 			},
 		},
 	}
 	cfgPath := setupCodexConfig(t, codexHome, initial)
 	t.Setenv(codexHomeEnv, codexHome)
-	cfg := initRespondConfig(t, "0.0.0.0:9999")
+	cfg := initGoblinConfig(t, "0.0.0.0:9999")
 
 	origStat, _ := os.Stat(cfgPath)
 	origMod := origStat.ModTime()
@@ -310,7 +310,7 @@ func TestRunCodexConfig_CleansUpOldBak(t *testing.T) {
 		},
 	})
 	t.Setenv(codexHomeEnv, codexHome)
-	cfg := initRespondConfig(t, "0.0.0.0:9999")
+	cfg := initGoblinConfig(t, "0.0.0.0:9999")
 
 	bakPath := codexConfigPath(codexHome) + ".bak"
 	os.WriteFile(bakPath, []byte("stale backup"), 0644)

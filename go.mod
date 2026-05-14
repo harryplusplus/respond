@@ -1,4 +1,4 @@
-module github.com/harryplusplus/respond
+module github.com/harryplusplus/goblin
 
 go 1.26.3
 

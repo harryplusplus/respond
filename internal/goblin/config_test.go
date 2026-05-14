@@ -1,4 +1,4 @@
-package respond
+package goblin
 
 import (
 	"fmt"
@@ -261,28 +261,28 @@ func formatErrors(errs []error) string {
 	return b.String()
 }
 
-func TestRespondDir(t *testing.T) {
+func TestGoblinDir(t *testing.T) {
 	t.Run("env_set", func(t *testing.T) {
-		t.Setenv(respondHomeEnv, "/custom/path")
-		got, err := respondDir()
+		t.Setenv(goblinHomeEnv, "/custom/path")
+		got, err := goblinDir()
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got != "/custom/path" {
-			t.Errorf("respondDir() = %q, want %q", got, "/custom/path")
+			t.Errorf("goblinDir() = %q, want %q", got, "/custom/path")
 		}
 	})
 
 	t.Run("env_unset", func(t *testing.T) {
-		t.Setenv(respondHomeEnv, "")
-		got, err := respondDir()
+		t.Setenv(goblinHomeEnv, "")
+		got, err := goblinDir()
 		if err != nil {
 			t.Fatal(err)
 		}
 		home, _ := os.UserHomeDir()
-		want := filepath.Join(home, ".respond")
+		want := filepath.Join(home, ".goblin")
 		if got != want {
-			t.Errorf("respondDir() = %q, want %q", got, want)
+			t.Errorf("goblinDir() = %q, want %q", got, want)
 		}
 	})
 }
@@ -314,10 +314,10 @@ func TestLoadConfig(t *testing.T) {
 	t.Run("with_config_file", func(t *testing.T) {
 		home := t.TempDir()
 		data := []byte("address: 127.0.0.1:9999\n")
-		if err := os.WriteFile(respondConfigPath(home), data, 0644); err != nil {
+		if err := os.WriteFile(goblinConfigPath(home), data, 0644); err != nil {
 			t.Fatal(err)
 		}
-		t.Setenv(respondHomeEnv, home)
+		t.Setenv(goblinHomeEnv, home)
 
 		cfg, err := loadConfig()
 		if err != nil {
@@ -329,7 +329,7 @@ func TestLoadConfig(t *testing.T) {
 	})
 
 	t.Run("without_config_file", func(t *testing.T) {
-		t.Setenv(respondHomeEnv, t.TempDir())
+		t.Setenv(goblinHomeEnv, t.TempDir())
 
 		cfg, err := loadConfig()
 		if err != nil {
@@ -342,10 +342,10 @@ func TestLoadConfig(t *testing.T) {
 
 	t.Run("invalid_yaml", func(t *testing.T) {
 		home := t.TempDir()
-		if err := os.WriteFile(respondConfigPath(home), []byte(": : invalid"), 0644); err != nil {
+		if err := os.WriteFile(goblinConfigPath(home), []byte(": : invalid"), 0644); err != nil {
 			t.Fatal(err)
 		}
-		t.Setenv(respondHomeEnv, home)
+		t.Setenv(goblinHomeEnv, home)
 
 		if _, err := loadConfig(); err == nil {
 			t.Error("loadConfig() expected error, got nil")
@@ -355,10 +355,10 @@ func TestLoadConfig(t *testing.T) {
 	t.Run("validation_error", func(t *testing.T) {
 		home := t.TempDir()
 		data := []byte("address: example.com:8080\n")
-		if err := os.WriteFile(respondConfigPath(home), data, 0644); err != nil {
+		if err := os.WriteFile(goblinConfigPath(home), data, 0644); err != nil {
 			t.Fatal(err)
 		}
-		t.Setenv(respondHomeEnv, home)
+		t.Setenv(goblinHomeEnv, home)
 
 		if _, err := loadConfig(); err == nil {
 			t.Error("loadConfig() expected error for invalid host, got nil")
