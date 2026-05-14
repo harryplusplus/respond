@@ -16,6 +16,10 @@ func checkMapstructureTags(t *testing.T, ty reflect.Type, path string) {
 	switch ty.Kind() {
 	case reflect.Struct:
 		for f := range ty.Fields() {
+			if !f.IsExported() {
+				continue
+			}
+
 			path := fmt.Sprintf("%s.%s", path, f.Name)
 			tag := f.Tag.Get("mapstructure")
 			if tag == "" {
