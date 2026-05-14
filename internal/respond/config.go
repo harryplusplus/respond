@@ -28,6 +28,14 @@ type Model struct {
 
 var config Config
 
+func loadConfig() (Config, error) {
+	var cfg Config
+	if err := viper.Unmarshal(&cfg); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
 func InitConfig() error {
 	viper.SetConfigName("respond")
 	viper.SetConfigType("yaml")
@@ -36,9 +44,7 @@ func InitConfig() error {
 
 	if home := os.Getenv("RESPOND_HOME"); home != "" {
 		viper.AddConfigPath(home)
-	}
-
-	if dir, err := os.UserHomeDir(); err == nil {
+	} else if dir, err := os.UserHomeDir(); err == nil {
 		viper.AddConfigPath(filepath.Join(dir, ".respond"))
 	}
 
@@ -48,17 +54,22 @@ func InitConfig() error {
 		}
 	}
 
-	return viper.Unmarshal(&config)
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	config = cfg
+	return nil
 }
 
 func WatchConfig() {
 	viper.OnConfigChange(func(e fsnotify.Event) {
-		var nc Config
-		if err := viper.Unmarshal(&nc); err != nil {
+		cfg, err := loadConfig()
+		if err != nil {
 			slog.Error("config reload failed; keeping current config", "error", err)
 			return
 		}
-		config = nc
+		config = cfg
 		slog.Info("config reloaded", "file", e.Name)
 	})
 	viper.WatchConfig()
