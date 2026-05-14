@@ -85,7 +85,7 @@ func InitConfig() error {
 	return nil
 }
 
-func (c *Config) BaseURL() string {
+func (c *Config) baseURL() string {
 	return fmt.Sprintf("http://%s:%d", c.Host, c.Port)
 }
 

@@ -34,7 +34,7 @@ func RunCodexConfig(cfg *Config) error {
 		return fmt.Errorf("parse codex config: %w", err)
 	}
 
-	baseURL := cfg.BaseURL()
+	baseURL := cfg.baseURL()
 
 	if !applyRespondConfig(codexCfg, baseURL) {
 		fmt.Printf("%s: already up to date\n", codexCfgPath)

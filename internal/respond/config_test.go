@@ -306,9 +306,9 @@ func TestBaseURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.cfg.BaseURL()
+			got := tt.cfg.baseURL()
 			if got != tt.want {
-				t.Errorf("Config{Host: %q, Port: %d}.BaseURL() = %q, want %q", tt.cfg.Host, tt.cfg.Port, got, tt.want)
+				t.Errorf("Config{Host: %q, Port: %d}.baseURL() = %q, want %q", tt.cfg.Host, tt.cfg.Port, got, tt.want)
 			}
 		})
 	}
