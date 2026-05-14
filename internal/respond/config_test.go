@@ -9,14 +9,14 @@ import (
 	"testing"
 )
 
-func TestConfigMapstructureTags(t *testing.T) {
+func TestConfigYAMLTags(t *testing.T) {
 	ty := reflect.TypeFor[Config]()
-	for _, err := range checkMapstructureTags(ty, ty.Name()) {
+	for _, err := range checkYAMLTags(ty, ty.Name()) {
 		t.Error(err)
 	}
 }
 
-func checkMapstructureTags(ty reflect.Type, path string) []error {
+func checkYAMLTags(ty reflect.Type, path string) []error {
 	var errs []error
 
 	switch ty.Kind() {
@@ -27,9 +27,9 @@ func checkMapstructureTags(ty reflect.Type, path string) []error {
 			}
 
 			fieldPath := fmt.Sprintf("%s.%s", path, f.Name)
-			tag := f.Tag.Get("mapstructure")
+			tag := f.Tag.Get("yaml")
 			if tag == "" {
-				errs = append(errs, fmt.Errorf("field %s: disallow: missing mapstructure tag", fieldPath))
+				errs = append(errs, fmt.Errorf("field %s: disallow: missing yaml tag", fieldPath))
 				continue
 			}
 
@@ -44,24 +44,24 @@ func checkMapstructureTags(ty reflect.Type, path string) []error {
 			}
 
 			if tag != expected {
-				errs = append(errs, fmt.Errorf("field %s: disallow: mapstructure key %q does not match field name (expected %q)",
+				errs = append(errs, fmt.Errorf("field %s: disallow: yaml key %q does not match field name (expected %q)",
 					fieldPath, tag, expected))
 			}
 
-			errs = append(errs, checkMapstructureTags(f.Type, fieldPath)...)
+			errs = append(errs, checkYAMLTags(f.Type, fieldPath)...)
 		}
 	case reflect.Map:
 		if ty.Key().Kind() != reflect.String {
 			errs = append(errs, fmt.Errorf("field %s: disallow: map key type %s (must be string)", path, ty.Key()))
 			return errs
 		}
-		errs = append(errs, checkMapstructureTags(ty.Elem(), path)...)
-	case reflect.Slice:
-		errs = append(errs, checkMapstructureTags(ty.Elem(), path)...)
+		errs = append(errs, checkYAMLTags(ty.Elem(), path)...)
+	case reflect.Slice, reflect.Pointer:
+		errs = append(errs, checkYAMLTags(ty.Elem(), path)...)
 	case reflect.Bool, reflect.String, reflect.Int, reflect.Int8, reflect.Int16,
 		reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8,
 		reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float32,
-		reflect.Float64:
+		reflect.Float64, reflect.Interface:
 		// noop
 	default:
 		errs = append(errs, fmt.Errorf("field: %s: disallow: kind %s is not allowed", path, ty.Kind()))
@@ -166,50 +166,50 @@ func TestToSnakeCase(t *testing.T) {
 // -- test helpers for TestCheckMapstructureTags --
 
 type validStructAllTagged struct {
-	FieldOne string `mapstructure:"field_one"`
-	FieldTwo int    `mapstructure:"field_two"`
+	FieldOne string `yaml:"field_one"`
+	FieldTwo int    `yaml:"field_two"`
 }
 
 type missingTagStruct struct {
-	FieldOne string `mapstructure:"field_one"`
+	FieldOne string `yaml:"field_one"`
 	FieldTwo int
 }
 
 type wrongTagStruct struct {
-	FieldOne string `mapstructure:"field_one"`
-	FieldTwo int    `mapstructure:"wrong"`
+	FieldOne string `yaml:"field_one"`
+	FieldTwo int    `yaml:"wrong"`
 }
 
 type nonStringMapKey struct {
-	Fields map[int]string `mapstructure:"fields"`
+	Fields map[int]string `yaml:"fields"`
 }
 
 type disallowedKindPtr struct {
-	Data *string `mapstructure:"data"`
+	Data *string `yaml:"data"`
 }
 
 type skipTagStruct struct {
-	FieldOne string `mapstructure:"-"`
+	FieldOne string `yaml:"-"`
 }
 
 type unexportedFieldStruct struct {
-	FieldOne string `mapstructure:"field_one"`
+	FieldOne string `yaml:"field_one"`
 	internal int
 }
 
 type nestedValidStruct struct {
-	Inner validStructAllTagged `mapstructure:"inner"`
+	Inner validStructAllTagged `yaml:"inner"`
 }
 
 type sliceValidStruct struct {
-	Items []validStructAllTagged `mapstructure:"items"`
+	Items []validStructAllTagged `yaml:"items"`
 }
 
 type disallowedKindInterface struct {
-	Data any `mapstructure:"data"`
+	Data any `yaml:"data"`
 }
 
-func TestCheckMapstructureTags(t *testing.T) {
+func TestCheckYAMLTags(t *testing.T) {
 	tests := []struct {
 		name     string
 		ty       reflect.Type
@@ -217,29 +217,25 @@ func TestCheckMapstructureTags(t *testing.T) {
 	}{
 		{name: "valid_struct", ty: reflect.TypeFor[validStructAllTagged](), wantErrs: nil},
 		{name: "missing_tag", ty: reflect.TypeFor[missingTagStruct](), wantErrs: []string{
-			"field missingTagStruct.FieldTwo: disallow: missing mapstructure tag",
+			"field missingTagStruct.FieldTwo: disallow: missing yaml tag",
 		}},
 		{name: "wrong_tag", ty: reflect.TypeFor[wrongTagStruct](), wantErrs: []string{
-			`field wrongTagStruct.FieldTwo: disallow: mapstructure key "wrong" does not match field name (expected "field_two")`,
+			`field wrongTagStruct.FieldTwo: disallow: yaml key "wrong" does not match field name (expected "field_two")`,
 		}},
 		{name: "non_string_map_key", ty: reflect.TypeFor[nonStringMapKey](), wantErrs: []string{
 			"field nonStringMapKey.Fields: disallow: map key type int (must be string)",
 		}},
-		{name: "disallowed_kind_ptr", ty: reflect.TypeFor[disallowedKindPtr](), wantErrs: []string{
-			"field: disallowedKindPtr.Data: disallow: kind ptr is not allowed",
-		}},
+		{name: "pointer_to_string", ty: reflect.TypeFor[disallowedKindPtr](), wantErrs: nil},
 		{name: "skip_with_-_tag", ty: reflect.TypeFor[skipTagStruct](), wantErrs: nil},
 		{name: "unexported_field_skip", ty: reflect.TypeFor[unexportedFieldStruct](), wantErrs: nil},
 		{name: "nested_valid_struct", ty: reflect.TypeFor[nestedValidStruct](), wantErrs: nil},
 		{name: "slice_of_valid_structs", ty: reflect.TypeFor[sliceValidStruct](), wantErrs: nil},
-		{name: "disallowed_kind_interface", ty: reflect.TypeFor[disallowedKindInterface](), wantErrs: []string{
-			"field: disallowedKindInterface.Data: disallow: kind interface is not allowed",
-		}},
+		{name: "interface_any", ty: reflect.TypeFor[disallowedKindInterface](), wantErrs: nil},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			errs := checkMapstructureTags(tt.ty, tt.ty.Name())
+			errs := checkYAMLTags(tt.ty, tt.ty.Name())
 			if len(errs) != len(tt.wantErrs) {
 				t.Fatalf("got %d errors, want %d\n%s", len(errs), len(tt.wantErrs), formatErrors(errs))
 			}
@@ -418,9 +414,8 @@ func TestParseConfig(t *testing.T) {
 			},
 		},
 		{
-			name:    "empty_address",
-			cfg:     Config{Address: ""},
-			wantErr: true,
+			name: "empty_address_defaults_to_localhost",
+			cfg:  Config{Address: ""},
 		},
 		{
 			name:    "hostname_instead_of_ip",

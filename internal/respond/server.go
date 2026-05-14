@@ -3,6 +3,8 @@ package respond
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -12,6 +14,7 @@ import (
 )
 
 // Source: https://github.com/openai/codex/blob/main/codex-rs/models-manager/prompt.md (Apache-2.0)
+//
 //go:embed base_instructions.md
 var baseInstructions string
 
@@ -22,18 +25,22 @@ func RunServer() error {
 func runServer(cfg *Config) error {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 
+	modelsMgr := NewModelsManager(cfg)
+
 	srv := &http.Server{
 		Addr:    cfg.Address,
-		Handler: newHandler(),
+		Handler: newHandler(modelsMgr),
 	}
 
+	errCh := make(chan error, 1)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	go func() {
 		slog.Info("starting server", "addr", cfg.Address)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server error", "error", err)
+			errCh <- err
+			stop()
 		}
 	}()
 
@@ -42,12 +49,20 @@ func runServer(cfg *Config) error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	shutdownErr := srv.Shutdown(shutdownCtx)
+
+	select {
+	case listenErr := <-errCh:
+		return errors.Join(listenErr, shutdownErr)
+	default:
+		return shutdownErr
+	}
 }
 
-func newHandler() http.Handler {
+func newHandler(modelsMgr *ModelsManager) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
+	mux.HandleFunc("GET /models", handleModels(modelsMgr))
 	return loggingMiddleware(mux)
 }
 
@@ -55,6 +70,19 @@ func handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"ok"}` + "\n"))
+}
+
+func handleModels(modelsMgr *ModelsManager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		resp := modelsMgr.Models()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			slog.Error("failed to encode models response", "error", err)
+		}
+	}
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {

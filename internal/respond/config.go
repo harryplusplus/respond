@@ -1,7 +1,6 @@
 package respond
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -9,26 +8,26 @@ import (
 	"strconv"
 	"sync/atomic"
 
-	"github.com/spf13/viper"
+	"go.yaml.in/yaml/v3"
 )
 
 type Config struct {
-	Address   string              `mapstructure:"address"`
-	Providers map[string]Provider `mapstructure:"providers"`
+	Address   string              `yaml:"address"`
+	Providers map[string]Provider `yaml:"providers"`
 }
 
 type Provider struct {
-	BaseURL string           `mapstructure:"base_url"`
-	EnvKey  string           `mapstructure:"env_key"`
-	Models  map[string]Model `mapstructure:"models"`
-}
-
-type Model struct {
+	BaseURL string                `yaml:"base_url"`
+	EnvKey  string                `yaml:"env_key"`
+	Models  map[string]*ModelInfo `yaml:"models"`
 }
 
 var config atomic.Pointer[Config]
 
-const respondHomeEnv = "RESPOND_HOME"
+const (
+	respondHomeEnv = "RESPOND_HOME"
+	defaultAddress = "localhost:8080"
+)
 
 func respondDir() (string, error) {
 	home := os.Getenv(respondHomeEnv)
@@ -48,31 +47,23 @@ func respondConfigPath(dir string) string {
 }
 
 func loadConfig() (*Config, error) {
-	v := viper.New()
-	v.SetConfigName("respond")
-	v.SetConfigType("yaml")
-	v.SetDefault("address", "localhost:8080")
-
 	dir, err := respondDir()
 	if err != nil {
 		return nil, err
 	}
-	v.AddConfigPath(dir)
 
-	if err := v.ReadInConfig(); err != nil {
-		if _, ok := errors.AsType[viper.ConfigFileNotFoundError](err); !ok {
-			return nil, err
-		}
-	}
+	cfg := &Config{}
 
-	var cfg Config
-	if err := v.Unmarshal(&cfg); err != nil {
+	data, err := os.ReadFile(respondConfigPath(dir))
+	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
-	if err := parseConfig(&cfg); err != nil {
+
+	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
-	return &cfg, nil
+
+	return cfg, parseConfig(cfg)
 }
 
 func InitConfig() error {
@@ -89,6 +80,10 @@ func (c *Config) baseURL() string {
 }
 
 func parseConfig(cfg *Config) error {
+	if cfg.Address == "" {
+		cfg.Address = defaultAddress
+	}
+
 	host, port, err := net.SplitHostPort(cfg.Address)
 	if err != nil {
 		return fmt.Errorf("invalid address %q: %w", cfg.Address, err)
@@ -106,5 +101,20 @@ func parseConfig(cfg *Config) error {
 	if portNum < 1 || portNum > 65535 {
 		return fmt.Errorf("port must be between 1 and 65535, got %d", portNum)
 	}
+
+	hydrateModels(cfg)
 	return nil
+}
+
+func hydrateModels(cfg *Config) {
+	for name, p := range cfg.Providers {
+		for slug, m := range p.Models {
+			if m == nil {
+				m = &ModelInfo{}
+			}
+			m.Slug = name + "/" + slug
+			fillModelDefaults(m)
+			p.Models[slug] = m
+		}
+	}
 }
