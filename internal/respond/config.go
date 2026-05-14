@@ -47,7 +47,7 @@ func respondConfigPath(dir string) string {
 	return filepath.Join(dir, "respond.yaml")
 }
 
-func InitConfig() error {
+func newConfig() (*Config, error) {
 	v := viper.New()
 	v.SetConfigName("respond")
 	v.SetConfigType("yaml")
@@ -56,24 +56,32 @@ func InitConfig() error {
 
 	dir, err := respondDir()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	v.AddConfigPath(dir)
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := errors.AsType[viper.ConfigFileNotFoundError](err); !ok {
-			return err
+			return nil, err
 		}
 	}
 
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
-		return err
+		return nil, err
 	}
 	if err := parseConfig(&cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+func InitConfig() error {
+	cfg, err := newConfig()
+	if err != nil {
 		return err
 	}
-	config.Store(&cfg)
+	config.Store(cfg)
 	return nil
 }
 

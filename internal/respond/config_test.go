@@ -314,6 +314,68 @@ func TestBaseURL(t *testing.T) {
 	}
 }
 
+func TestNewConfig(t *testing.T) {
+	t.Run("with_config_file", func(t *testing.T) {
+		home := t.TempDir()
+		data := []byte("host: 127.0.0.1\nport: 9999\n")
+		if err := os.WriteFile(respondConfigPath(home), data, 0644); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(respondHomeEnv, home)
+
+		cfg, err := newConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Host != "127.0.0.1" {
+			t.Errorf("Host = %q, want %q", cfg.Host, "127.0.0.1")
+		}
+		if cfg.Port != 9999 {
+			t.Errorf("Port = %d, want %d", cfg.Port, 9999)
+		}
+	})
+
+	t.Run("without_config_file", func(t *testing.T) {
+		t.Setenv(respondHomeEnv, t.TempDir())
+
+		cfg, err := newConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Host != "localhost" {
+			t.Errorf("default Host = %q, want %q", cfg.Host, "localhost")
+		}
+		if cfg.Port != 8080 {
+			t.Errorf("default Port = %d, want %d", cfg.Port, 8080)
+		}
+	})
+
+	t.Run("invalid_yaml", func(t *testing.T) {
+		home := t.TempDir()
+		if err := os.WriteFile(respondConfigPath(home), []byte(": : invalid"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(respondHomeEnv, home)
+
+		if _, err := newConfig(); err == nil {
+			t.Error("newConfig() expected error, got nil")
+		}
+	})
+
+	t.Run("validation_error", func(t *testing.T) {
+		home := t.TempDir()
+		data := []byte("host: example.com\nport: 8080\n")
+		if err := os.WriteFile(respondConfigPath(home), data, 0644); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(respondHomeEnv, home)
+
+		if _, err := newConfig(); err == nil {
+			t.Error("newConfig() expected error for invalid host, got nil")
+		}
+	})
+}
+
 func TestParseConfig(t *testing.T) {
 	tests := []struct {
 		name    string
