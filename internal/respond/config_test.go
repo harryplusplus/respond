@@ -163,47 +163,47 @@ func TestToSnakeCase(t *testing.T) {
 
 // -- test helpers for TestCheckMapstructureTags --
 
-type _validStructAllTagged struct {
+type validStructAllTagged struct {
 	FieldOne string `mapstructure:"field_one"`
 	FieldTwo int    `mapstructure:"field_two"`
 }
 
-type _missingTagStruct struct {
+type missingTagStruct struct {
 	FieldOne string `mapstructure:"field_one"`
 	FieldTwo int
 }
 
-type _wrongTagStruct struct {
+type wrongTagStruct struct {
 	FieldOne string `mapstructure:"field_one"`
 	FieldTwo int    `mapstructure:"wrong"`
 }
 
-type _nonStringMapKey struct {
+type nonStringMapKey struct {
 	Fields map[int]string `mapstructure:"fields"`
 }
 
-type _disallowedKindPtr struct {
+type disallowedKindPtr struct {
 	Data *string `mapstructure:"data"`
 }
 
-type _skipTagStruct struct {
+type skipTagStruct struct {
 	FieldOne string `mapstructure:"-"`
 }
 
-type _unexportedFieldStruct struct {
+type unexportedFieldStruct struct {
 	FieldOne string `mapstructure:"field_one"`
 	internal int
 }
 
-type _nestedValidStruct struct {
-	Inner _validStructAllTagged `mapstructure:"inner"`
+type nestedValidStruct struct {
+	Inner validStructAllTagged `mapstructure:"inner"`
 }
 
-type _sliceValidStruct struct {
-	Items []_validStructAllTagged `mapstructure:"items"`
+type sliceValidStruct struct {
+	Items []validStructAllTagged `mapstructure:"items"`
 }
 
-type _disallowedKindInterface struct {
+type disallowedKindInterface struct {
 	Data any `mapstructure:"data"`
 }
 
@@ -213,25 +213,25 @@ func TestCheckMapstructureTags(t *testing.T) {
 		ty       reflect.Type
 		wantErrs []string
 	}{
-		{name: "valid struct", ty: reflect.TypeFor[_validStructAllTagged](), wantErrs: nil},
-		{name: "missing tag", ty: reflect.TypeFor[_missingTagStruct](), wantErrs: []string{
-			"field _missingTagStruct.FieldTwo: disallow: missing mapstructure tag",
+		{name: "valid struct", ty: reflect.TypeFor[validStructAllTagged](), wantErrs: nil},
+		{name: "missing tag", ty: reflect.TypeFor[missingTagStruct](), wantErrs: []string{
+			"field missingTagStruct.FieldTwo: disallow: missing mapstructure tag",
 		}},
-		{name: "wrong tag", ty: reflect.TypeFor[_wrongTagStruct](), wantErrs: []string{
-			`field _wrongTagStruct.FieldTwo: disallow: mapstructure key "wrong" does not match field name (expected "field_two")`,
+		{name: "wrong tag", ty: reflect.TypeFor[wrongTagStruct](), wantErrs: []string{
+			`field wrongTagStruct.FieldTwo: disallow: mapstructure key "wrong" does not match field name (expected "field_two")`,
 		}},
-		{name: "non-string map key", ty: reflect.TypeFor[_nonStringMapKey](), wantErrs: []string{
-			"field _nonStringMapKey.Fields: disallow: map key type int (must be string)",
+		{name: "non-string map key", ty: reflect.TypeFor[nonStringMapKey](), wantErrs: []string{
+			"field nonStringMapKey.Fields: disallow: map key type int (must be string)",
 		}},
-		{name: "disallowed kind ptr", ty: reflect.TypeFor[_disallowedKindPtr](), wantErrs: []string{
-			"field: _disallowedKindPtr.Data: disallow: kind ptr is not allowed",
+		{name: "disallowed kind ptr", ty: reflect.TypeFor[disallowedKindPtr](), wantErrs: []string{
+			"field: disallowedKindPtr.Data: disallow: kind ptr is not allowed",
 		}},
-		{name: "skip with - tag", ty: reflect.TypeFor[_skipTagStruct](), wantErrs: nil},
-		{name: "unexported field skip", ty: reflect.TypeFor[_unexportedFieldStruct](), wantErrs: nil},
-		{name: "nested valid struct", ty: reflect.TypeFor[_nestedValidStruct](), wantErrs: nil},
-		{name: "slice of valid structs", ty: reflect.TypeFor[_sliceValidStruct](), wantErrs: nil},
-		{name: "disallowed kind interface", ty: reflect.TypeFor[_disallowedKindInterface](), wantErrs: []string{
-			"field: _disallowedKindInterface.Data: disallow: kind interface is not allowed",
+		{name: "skip with - tag", ty: reflect.TypeFor[skipTagStruct](), wantErrs: nil},
+		{name: "unexported field skip", ty: reflect.TypeFor[unexportedFieldStruct](), wantErrs: nil},
+		{name: "nested valid struct", ty: reflect.TypeFor[nestedValidStruct](), wantErrs: nil},
+		{name: "slice of valid structs", ty: reflect.TypeFor[sliceValidStruct](), wantErrs: nil},
+		{name: "disallowed kind interface", ty: reflect.TypeFor[disallowedKindInterface](), wantErrs: []string{
+			"field: disallowedKindInterface.Data: disallow: kind interface is not allowed",
 		}},
 	}
 
