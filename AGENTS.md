@@ -24,7 +24,11 @@ Go 명령줄 인터페이스는 구성되어 있다.
 - 함수/변수 위 doc string 금지. 함수명이 설명을 대신해야 한다.
 - `//`, `// TODO`, `// NOTE` 모두 동일 기준 적용.
 - 커밋 메시지는 [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) 스펙을 따라라.
-- Go 파일 수정 후 `go fmt ./...`, `go vet ./...`, `errcheck ./...`를 실행해라.
+- Go 파일 수정 후 `go fmt ./...`, `go vet ./...`, `errcheck ./...`, `staticcheck ./...`를 실행해라.
+  통합 테스트(`test/integration/`)는 `-tags=integration` 필요:
+  `go vet -tags=integration ./test/integration/`
+  `errcheck -tags=integration ./test/integration/`
+  `staticcheck -tags=integration ./test/integration/`
 
 ## 통합 테스트
 
