@@ -3,7 +3,6 @@ package goblin
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -25,11 +24,9 @@ func RunServer() error {
 func runServer(cfg *Config) error {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 
-	modelsMgr := NewModelsManager(cfg)
-
 	srv := &http.Server{
 		Addr:    cfg.Address,
-		Handler: newHandler(modelsMgr),
+		Handler: NewHandler(cfg),
 	}
 
 	errCh := make(chan error, 1)
@@ -59,31 +56,20 @@ func runServer(cfg *Config) error {
 	}
 }
 
-func newHandler(modelsMgr *ModelsManager) http.Handler {
+func NewHandler(cfg *Config) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", handleHealthz)
-	mux.HandleFunc("GET /models", handleModels(modelsMgr))
+	mux.HandleFunc("GET /healthz", handleGetHealthz)
+	mux.HandleFunc("GET /models", handleGetModels(cfg))
+	mux.HandleFunc("POST /responses", handlePostResponses(cfg))
 	return loggingMiddleware(mux)
 }
 
-func handleHealthz(w http.ResponseWriter, r *http.Request) {
+func handleGetHealthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"ok"}` + "\n"))
 }
 
-func handleModels(modelsMgr *ModelsManager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		resp := modelsMgr.Models()
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			slog.Error("failed to encode models response", "error", err)
-		}
-	}
-}
 
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
