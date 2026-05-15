@@ -27,18 +27,15 @@ Go 명령줄 인터페이스는 구성되어 있다.
 - `//`, `// TODO`, `// NOTE` 모두 동일 기준 적용.
 - 커밋 메시지는 [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) 스펙을 따라라.
 - Go 파일 수정 후 `go fmt ./...`, `go vet ./...`, `errcheck ./...`, `staticcheck ./...`를 실행해라.
-  통합 테스트(`test/integration/`)는 `-tags=integration` 필요:
-  `go vet -tags=integration ./test/integration/`
-  `errcheck -tags=integration ./test/integration/`
-  `staticcheck -tags=integration ./test/integration/`
 - 작업 완료 후 이 가이드라인을 모두 지켰는지 다시 확인하고 어긴 부분이 있으면 고쳐라.
 
 ## 통합 테스트
 
 ```bash
-go test -tags=integration -run TestIntegration ./test/integration/ -v -count=1 -parallel 1 -timeout=900s
+GOBLIN_INTEGRATION=1 go test ./test/integration/ -v -count=1 -parallel=1 -timeout=900s
 ```
 
-- `//go:build integration` 태그 사용, `go test ./...`에서 제외
-- `CROF_API_KEY` 환경변수 필수 (provider: `crof`, model: `kimi-k2.6-precision`)
+- `GOBLIN_INTEGRATION=1` 환경변수로 통합 테스트 활성화
+- `CROF_API_KEY` 환경변수가 미리 설정되어 있어야 함 (provider: `crof`, model: `kimi-k2.6-precision`)
 - `codex` 바이너리가 `$PATH`에 있어야 함
+- `GOBLIN_INTEGRATION` 없이 `go test ./...` 실행 시 통합 테스트는 자동 Skip
