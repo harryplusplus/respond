@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
 
 	"go.yaml.in/yaml/v3"
@@ -100,6 +101,11 @@ func parseConfig(cfg *Config) error {
 	}
 	if portNum < 1 || portNum > 65535 {
 		return fmt.Errorf("port must be between 1 and 65535, got %d", portNum)
+	}
+
+	for name, p := range cfg.Providers {
+		p.BaseURL = strings.TrimRight(p.BaseURL, "/")
+		cfg.Providers[name] = p
 	}
 
 	HydrateModels(cfg)
