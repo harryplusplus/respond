@@ -57,6 +57,15 @@ npm은 패키지 압축 파일의 내용이 바뀌었는지 검증할 방법이 
 반면 Go는 sum.golang.org라는 투명성 로그에 모듈 버전의 압축 파일 해시를 한번 등록하면 영구히 고정합니다.
 이후에 Git 태그를 재작성하거나 같은 버전 번호로 다른 압축 파일을 올려도 해시가 다르면 `checksum mismatch`로 설치가 거절됩니다.
 
+## 개발 환경 설정
+
+```bash
+go install honnef.co/go/tools/cmd/staticcheck@latest
+go install github.com/kisielk/errcheck@latest
+```
+
+> `go fmt`, `go vet`는 Go 설치 시 기본 포함됩니다.
+
 ## Attribution
 
 이 프로젝트는 [openai/codex](https://github.com/openai/codex) (Apache-2.0)의 파일들을 포함하고 있습니다. 각 파일의 원본 출처는 Go 소스 코드 내 `//go:embed` 위 주석에서 확인할 수 있습니다.
