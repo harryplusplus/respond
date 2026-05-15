@@ -20,6 +20,7 @@ Go 명령줄 인터페이스는 구성되어 있다.
   - 나쁨: `// 응답 검증` → 아래 assert가 이미 검증
   - 좋음: `// -ldflags로 빌드 시 주입` → 코드만으로 알 방법 없음
   - 좋음: `// API 키는 response body가 아닌 header로 전달` → 문서화되지 않은 동작
+  - 좋음: `// name 필드는 codex validation에서 필수` — codex 외부 라이브러리 제약
 - 함수/변수 위 doc string 금지. 함수명이 설명을 대신해야 한다.
 - `//`, `// TODO`, `// NOTE` 모두 동일 기준 적용.
 - 커밋 메시지는 [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) 스펙을 따라라.
