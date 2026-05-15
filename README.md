@@ -64,6 +64,12 @@ go install honnef.co/go/tools/cmd/staticcheck@latest
 go install github.com/kisielk/errcheck@latest
 ```
 
+VSCode의 gopls 진단을 CLI에서 재현하려면:
+
+```bash
+fd -e go -X gopls check {}
+```
+
 ## Attribution
 
 이 프로젝트는 [openai/codex](https://github.com/openai/codex) (Apache-2.0)의 파일들을 포함하고 있습니다. 각 파일의 원본 출처는 Go 소스 코드 내 `//go:embed` 위 주석에서 확인할 수 있습니다.
