@@ -13,6 +13,59 @@ const (
 	goblinProviderID = "goblin"
 )
 
+type codexConfig struct {
+	raw map[string]any
+}
+
+func newCodexConfig(raw map[string]any) *codexConfig {
+	return &codexConfig{raw: raw}
+}
+
+func (c *codexConfig) modelProvider() string {
+	s, _ := c.raw["model_provider"].(string)
+	return s
+}
+
+func (c *codexConfig) setModelProvider(v string) {
+	c.raw["model_provider"] = v
+}
+
+func (c *codexConfig) goblinProvider() *codexProvider {
+	providers, _ := c.raw["model_providers"].(map[string]any)
+	if providers == nil {
+		providers = make(map[string]any)
+		c.raw["model_providers"] = providers
+	}
+	p, _ := providers[goblinProviderID].(map[string]any)
+	if p == nil {
+		p = make(map[string]any)
+		providers[goblinProviderID] = p
+	}
+	return &codexProvider{raw: p}
+}
+
+type codexProvider struct {
+	raw map[string]any
+}
+
+func (p *codexProvider) baseURL() string {
+	s, _ := p.raw["base_url"].(string)
+	return s
+}
+
+func (p *codexProvider) setBaseURL(v string) {
+	p.raw["base_url"] = v
+}
+
+func (p *codexProvider) name() string {
+	s, _ := p.raw["name"].(string)
+	return s
+}
+
+func (p *codexProvider) setName(v string) {
+	p.raw["name"] = v
+}
+
 func codexConfigPath(dir string) string {
 	return filepath.Join(dir, "config.toml")
 }
@@ -29,19 +82,20 @@ func runCodexConfig(cfg *Config) error {
 		return fmt.Errorf("read codex config: %w", err)
 	}
 
-	var codexCfg map[string]any
-	if err := toml.Unmarshal(codexCfgData, &codexCfg); err != nil {
+	var raw map[string]any
+	if err := toml.Unmarshal(codexCfgData, &raw); err != nil {
 		return fmt.Errorf("parse codex config: %w", err)
 	}
 
 	baseURL := cfg.baseURL()
+	cc := newCodexConfig(raw)
 
-	if !applyGoblinConfig(codexCfg, baseURL) {
+	if !cc.applyGoblinConfig(baseURL) {
 		fmt.Printf("%s: already up to date\n", codexCfgPath)
 		return nil
 	}
 
-	updated, err := toml.Marshal(codexCfg)
+	updated, err := toml.Marshal(raw)
 	if err != nil {
 		return fmt.Errorf("marshal codex config: %w", err)
 	}
@@ -67,49 +121,23 @@ func RunCodexConfig() error {
 	return runCodexConfig(config.Load())
 }
 
-func codexModelProvider(cfg map[string]any) string {
-	s, _ := cfg["model_provider"].(string)
-	return s
-}
-
-func setCodexModelProvider(cfg map[string]any, v string) {
-	cfg["model_provider"] = v
-}
-
-func codexProvider(cfg map[string]any, id string) map[string]any {
-	providers, _ := cfg["model_providers"].(map[string]any)
-	if providers == nil {
-		providers = make(map[string]any)
-		cfg["model_providers"] = providers
-	}
-	p, _ := providers[id].(map[string]any)
-	if p == nil {
-		p = make(map[string]any)
-		providers[id] = p
-	}
-	return p
-}
-
-func codexProviderBaseURL(p map[string]any) string {
-	s, _ := p["base_url"].(string)
-	return s
-}
-
-func setCodexProviderBaseURL(p map[string]any, v string) {
-	p["base_url"] = v
-}
-
-func applyGoblinConfig(cfg map[string]any, baseURL string) bool {
+func (c *codexConfig) applyGoblinConfig(baseURL string) bool {
 	var changed bool
 
-	if codexModelProvider(cfg) != goblinProviderID {
-		setCodexModelProvider(cfg, goblinProviderID)
+	if c.modelProvider() != goblinProviderID {
+		c.setModelProvider(goblinProviderID)
 		changed = true
 	}
 
-	p := codexProvider(cfg, goblinProviderID)
-	if codexProviderBaseURL(p) != baseURL {
-		setCodexProviderBaseURL(p, baseURL)
+	p := c.goblinProvider()
+	if p.baseURL() != baseURL {
+		p.setBaseURL(baseURL)
+		changed = true
+	}
+
+	// required by codex config validation
+	if p.name() != goblinProviderID {
+		p.setName(goblinProviderID)
 		changed = true
 	}
 

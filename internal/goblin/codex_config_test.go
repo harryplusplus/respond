@@ -78,7 +78,7 @@ func TestApplyGoblinConfig(t *testing.T) {
 		cfg     map[string]any
 		baseURL string
 		want    bool
-		check   func(t *testing.T, cfg map[string]any)
+		check   func(t *testing.T, cc *codexConfig)
 	}{
 		{
 			name: "already_correct",
@@ -87,6 +87,7 @@ func TestApplyGoblinConfig(t *testing.T) {
 				"model_providers": map[string]any{
 					"goblin": map[string]any{
 						"base_url": "http://0.0.0.0:9999",
+						"name":    "goblin",
 					},
 				},
 			},
@@ -104,9 +105,12 @@ func TestApplyGoblinConfig(t *testing.T) {
 			},
 			baseURL: "http://0.0.0.0:9999",
 			want:    true,
-			check: func(t *testing.T, cfg map[string]any) {
-				if codexModelProvider(cfg) != goblinProviderID {
-					t.Errorf(`model_provider = %q, want "goblin"`, codexModelProvider(cfg))
+			check: func(t *testing.T, cc *codexConfig) {
+				if cc.modelProvider() != goblinProviderID {
+					t.Errorf(`model_provider = %q, want "goblin"`, cc.modelProvider())
+				}
+				if n := cc.goblinProvider().name(); n != goblinProviderID {
+					t.Errorf(`provider name = %q, want "goblin"`, n)
 				}
 			},
 		},
@@ -122,9 +126,12 @@ func TestApplyGoblinConfig(t *testing.T) {
 			},
 			baseURL: "http://0.0.0.0:9999",
 			want:    true,
-			check: func(t *testing.T, cfg map[string]any) {
-				if codexModelProvider(cfg) != goblinProviderID {
-					t.Errorf(`model_provider = %q, want "goblin"`, codexModelProvider(cfg))
+			check: func(t *testing.T, cc *codexConfig) {
+				if cc.modelProvider() != goblinProviderID {
+					t.Errorf(`model_provider = %q, want "goblin"`, cc.modelProvider())
+				}
+				if n := cc.goblinProvider().name(); n != goblinProviderID {
+					t.Errorf(`provider name = %q, want "goblin"`, n)
 				}
 			},
 		},
@@ -135,9 +142,13 @@ func TestApplyGoblinConfig(t *testing.T) {
 			},
 			baseURL: "http://0.0.0.0:9999",
 			want:    true,
-			check: func(t *testing.T, cfg map[string]any) {
-				if codexProviderBaseURL(codexProvider(cfg, goblinProviderID)) != "http://0.0.0.0:9999" {
-					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, codexProviderBaseURL(codexProvider(cfg, goblinProviderID)))
+			check: func(t *testing.T, cc *codexConfig) {
+				p := cc.goblinProvider()
+				if p.baseURL() != "http://0.0.0.0:9999" {
+					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, p.baseURL())
+				}
+				if p.name() != goblinProviderID {
+					t.Errorf(`provider name = %q, want "goblin"`, p.name())
 				}
 			},
 		},
@@ -153,9 +164,13 @@ func TestApplyGoblinConfig(t *testing.T) {
 			},
 			baseURL: "http://0.0.0.0:9999",
 			want:    true,
-			check: func(t *testing.T, cfg map[string]any) {
-				if codexProviderBaseURL(codexProvider(cfg, goblinProviderID)) != "http://0.0.0.0:9999" {
-					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, codexProviderBaseURL(codexProvider(cfg, goblinProviderID)))
+			check: func(t *testing.T, cc *codexConfig) {
+				p := cc.goblinProvider()
+				if p.baseURL() != "http://0.0.0.0:9999" {
+					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, p.baseURL())
+				}
+				if p.name() != goblinProviderID {
+					t.Errorf(`provider name = %q, want "goblin"`, p.name())
 				}
 			},
 		},
@@ -171,9 +186,13 @@ func TestApplyGoblinConfig(t *testing.T) {
 			},
 			baseURL: "http://0.0.0.0:9999",
 			want:    true,
-			check: func(t *testing.T, cfg map[string]any) {
-				if codexProviderBaseURL(codexProvider(cfg, goblinProviderID)) != "http://0.0.0.0:9999" {
-					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, codexProviderBaseURL(codexProvider(cfg, goblinProviderID)))
+			check: func(t *testing.T, cc *codexConfig) {
+				p := cc.goblinProvider()
+				if p.baseURL() != "http://0.0.0.0:9999" {
+					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, p.baseURL())
+				}
+				if p.name() != goblinProviderID {
+					t.Errorf(`provider name = %q, want "goblin"`, p.name())
 				}
 			},
 		},
@@ -184,12 +203,16 @@ func TestApplyGoblinConfig(t *testing.T) {
 			},
 			baseURL: "http://0.0.0.0:9999",
 			want:    true,
-			check: func(t *testing.T, cfg map[string]any) {
-				if codexModelProvider(cfg) != goblinProviderID {
-					t.Errorf(`model_provider = %q, want "goblin"`, codexModelProvider(cfg))
+			check: func(t *testing.T, cc *codexConfig) {
+				if cc.modelProvider() != goblinProviderID {
+					t.Errorf(`model_provider = %q, want "goblin"`, cc.modelProvider())
 				}
-				if codexProviderBaseURL(codexProvider(cfg, goblinProviderID)) != "http://0.0.0.0:9999" {
-					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, codexProviderBaseURL(codexProvider(cfg, goblinProviderID)))
+				p := cc.goblinProvider()
+				if p.baseURL() != "http://0.0.0.0:9999" {
+					t.Errorf(`base_url = %q, want "http://0.0.0.0:9999"`, p.baseURL())
+				}
+				if p.name() != goblinProviderID {
+					t.Errorf(`provider name = %q, want "goblin"`, p.name())
 				}
 			},
 		},
@@ -197,12 +220,13 @@ func TestApplyGoblinConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := applyGoblinConfig(tt.cfg, tt.baseURL)
+			cc := newCodexConfig(tt.cfg)
+			got := cc.applyGoblinConfig(tt.baseURL)
 			if got != tt.want {
 				t.Errorf("applyGoblinConfig = %v, want %v", got, tt.want)
 			}
 			if tt.check != nil {
-				tt.check(t, tt.cfg)
+				tt.check(t, cc)
 			}
 		})
 	}
@@ -233,6 +257,14 @@ func TestRunCodexConfig_UpdatesWhenMissingProvider(t *testing.T) {
 	assertCodexConfig(t, codexConfigPath(codexHome), map[string]any{
 		"model_provider": "goblin",
 	})
+
+	data, _ := os.ReadFile(codexConfigPath(codexHome))
+	var raw map[string]any
+	toml.Unmarshal(data, &raw)
+	p := newCodexConfig(raw).goblinProvider()
+	if p.name() != goblinProviderID {
+		t.Errorf("provider name = %q, want %q", p.name(), goblinProviderID)
+	}
 }
 
 func TestRunCodexConfig_UpdatesWhenWrongProvider(t *testing.T) {
@@ -259,10 +291,14 @@ func TestRunCodexConfig_UpdatesWhenWrongProvider(t *testing.T) {
 	})
 
 	data, _ := os.ReadFile(codexConfigPath(codexHome))
-	var result map[string]any
-	toml.Unmarshal(data, &result)
-	if codexProviderBaseURL(codexProvider(result, goblinProviderID)) != "http://127.0.0.1:8081" {
-		t.Errorf("base_url = %v, want http://127.0.0.1:8081", codexProviderBaseURL(codexProvider(result, goblinProviderID)))
+	var raw map[string]any
+	toml.Unmarshal(data, &raw)
+	p := newCodexConfig(raw).goblinProvider()
+	if p.baseURL() != "http://127.0.0.1:8081" {
+		t.Errorf("base_url = %v, want http://127.0.0.1:8081", p.baseURL())
+	}
+	if p.name() != goblinProviderID {
+		t.Errorf("provider name = %q, want %q", p.name(), goblinProviderID)
 	}
 }
 
@@ -274,6 +310,7 @@ func TestRunCodexConfig_SkipsWriteWhenAlreadyCorrect(t *testing.T) {
 		"model_providers": map[string]any{
 			"goblin": map[string]any{
 				"base_url": "http://0.0.0.0:9999",
+				"name":    "goblin",
 			},
 		},
 	}
@@ -329,5 +366,16 @@ func TestRunCodexConfig_CleansUpOldBak(t *testing.T) {
 	}
 	if bakCfg["model"] != "bar" {
 		t.Error("bak should contain original config, not stale data")
+	}
+
+	data, _ := os.ReadFile(codexConfigPath(codexHome))
+	var raw map[string]any
+	toml.Unmarshal(data, &raw)
+	p := newCodexConfig(raw).goblinProvider()
+	if p.name() != goblinProviderID {
+		t.Errorf("provider name = %q, want %q", p.name(), goblinProviderID)
+	}
+	if p.baseURL() != "http://0.0.0.0:9999" {
+		t.Errorf("base_url = %v, want http://0.0.0.0:9999", p.baseURL())
 	}
 }
