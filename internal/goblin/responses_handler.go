@@ -15,14 +15,14 @@ import (
 )
 
 type ResponsesHandler struct {
-	log    *slog.Logger
-	srcLog *slog.Logger
-	cfg    *GoblinConfig
+	log        *slog.Logger
+	logWithSrc *slog.Logger
+	cfg        *GoblinConfig
 }
 
 func newResponsesHandler(cfg *GoblinConfig) *ResponsesHandler {
-	log, srcLog := newComponentLogger("responses")
-	return &ResponsesHandler{log: log, srcLog: srcLog, cfg: cfg}
+	log, logWithSrc := newComponentLogger("responses")
+	return &ResponsesHandler{log: log, logWithSrc: logWithSrc, cfg: cfg}
 }
 
 func (h *ResponsesHandler) handlePostResponses() http.HandlerFunc {
@@ -163,7 +163,7 @@ func (h *ResponsesHandler) processRequest(
 	}
 	defer func() {
 		if err := upstreamResp.Body.Close(); err != nil {
-			h.srcLog.Error("failed to close upstream response body", "error", err)
+			h.logWithSrc.Error("failed to close upstream response body", "error", err)
 		}
 	}()
 

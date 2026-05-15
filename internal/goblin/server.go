@@ -11,14 +11,14 @@ import (
 )
 
 type server struct {
-	log    *slog.Logger
-	srcLog *slog.Logger
-	cfg    *GoblinConfig
+	log        *slog.Logger
+	logWithSrc *slog.Logger
+	cfg        *GoblinConfig
 }
 
 func newServer(cfg *GoblinConfig) *server {
-	log, srcLog := newComponentLogger("server")
-	return &server{log: log, srcLog: srcLog, cfg: cfg}
+	log, logWithSrc := newComponentLogger("server")
+	return &server{log: log, logWithSrc: logWithSrc, cfg: cfg}
 }
 
 func RunServer() error {
@@ -76,7 +76,7 @@ func (s *server) handleGetHealthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte(`{"status":"ok"}` + "\n")); err != nil {
-		s.srcLog.Error("healthz handler: write response", "error", err)
+		s.logWithSrc.Error("healthz handler: write response", "error", err)
 	}
 }
 

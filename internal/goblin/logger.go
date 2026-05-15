@@ -6,12 +6,12 @@ import (
 )
 
 var (
-	baseLog    = slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	baseSrcLog = slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+	baseLog        = slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	baseLogWithSrc = slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
 		AddSource: true,
 	}))
 )
 
-func newComponentLogger(name string) (log *slog.Logger, srcLog *slog.Logger) {
-	return baseLog.With("component", name), baseSrcLog.With("component", name)
+func newComponentLogger(name string) (log *slog.Logger, logWithSrc *slog.Logger) {
+	return baseLog.With("component", name), baseLogWithSrc.With("component", name)
 }

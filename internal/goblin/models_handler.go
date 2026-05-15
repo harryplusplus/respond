@@ -9,14 +9,14 @@ import (
 )
 
 type ModelsHandler struct {
-	log    *slog.Logger
-	srcLog *slog.Logger
-	cfg    *GoblinConfig
+	log        *slog.Logger
+	logWithSrc *slog.Logger
+	cfg        *GoblinConfig
 }
 
 func newModelsHandler(cfg *GoblinConfig) *ModelsHandler {
-	log, srcLog := newComponentLogger("models")
-	return &ModelsHandler{log: log, srcLog: srcLog, cfg: cfg}
+	log, logWithSrc := newComponentLogger("models")
+	return &ModelsHandler{log: log, logWithSrc: logWithSrc, cfg: cfg}
 }
 
 func (h *ModelsHandler) handleGetModels() http.HandlerFunc {
