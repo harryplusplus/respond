@@ -20,6 +20,125 @@ type ResponsesHandler struct {
 	cfg        *GoblinConfig
 }
 
+type sseWriter struct {
+	writer  io.Writer
+	flusher http.Flusher
+}
+
+func newSSEWriter(w http.ResponseWriter) *sseWriter {
+	f, _ := w.(http.Flusher)
+	return &sseWriter{writer: w, flusher: f}
+}
+
+func (s *sseWriter) emit(event string, data map[string]any) error {
+	line, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	if _, err := io.WriteString(s.writer, "event: "+event+"\n"); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(s.writer, "data: "+string(line)+"\n\n"); err != nil {
+		return err
+	}
+	if s.flusher != nil {
+		s.flusher.Flush()
+	}
+	return nil
+}
+
+func (s *sseWriter) emitCreated(id string) error {
+	return s.emit("response.created", map[string]any{
+		"type": "response.created",
+		"response": map[string]any{
+			"id": id,
+		},
+	})
+}
+
+func (s *sseWriter) emitCompleted(id string, usage *ResponseUsage) error {
+	resp := map[string]any{
+		"id":     id,
+		"status": "completed",
+	}
+	if usage != nil {
+		resp["usage"] = map[string]any{
+			"input_tokens":            usage.InputTokens,
+			"output_tokens":           usage.OutputTokens,
+			"total_tokens":            usage.TotalTokens,
+			"cached_input_tokens":     usage.CachedInputTokens,
+			"reasoning_output_tokens": usage.ReasoningOutputTokens,
+		}
+	}
+	return s.emit("response.completed", map[string]any{
+		"type":     "response.completed",
+		"response": resp,
+	})
+}
+
+func (s *sseWriter) emitFailed(id, code, message string) error {
+	return s.emit("response.failed", map[string]any{
+		"type": "response.failed",
+		"response": map[string]any{
+			"id":     id,
+			"status": "failed",
+			"error": map[string]string{
+				"code":    code,
+				"message": message,
+			},
+		},
+	})
+}
+
+func (s *sseWriter) emitOutputItemAdded(item OutputItem, itemID string) error {
+	itemMap := map[string]any{
+		"id":     itemID,
+		"type":   item.Type,
+		"status": "in_progress",
+	}
+	switch item.Type {
+	case "message":
+		itemMap["role"] = item.Role
+		itemMap["content"] = item.Content
+	case "function_call":
+		itemMap["name"] = item.Name
+		itemMap["arguments"] = item.Arguments
+		itemMap["call_id"] = item.CallID
+	}
+	return s.emit("response.output_item.added", map[string]any{
+		"type": "response.output_item.added",
+		"item": itemMap,
+	})
+}
+
+func (s *sseWriter) emitOutputItemDone(item OutputItem, itemID string) error {
+	itemMap := map[string]any{
+		"id":     itemID,
+		"type":   item.Type,
+		"status": "completed",
+	}
+	switch item.Type {
+	case "message":
+		itemMap["role"] = item.Role
+		itemMap["content"] = item.Content
+	case "function_call":
+		itemMap["name"] = item.Name
+		itemMap["arguments"] = item.Arguments
+		itemMap["call_id"] = item.CallID
+	}
+	return s.emit("response.output_item.done", map[string]any{
+		"type": "response.output_item.done",
+		"item": itemMap,
+	})
+}
+
+func (s *sseWriter) emitOutputTextDelta(delta string) error {
+	return s.emit("response.output_text.delta", map[string]any{
+		"type":  "response.output_text.delta",
+		"delta": delta,
+	})
+}
+
 func newResponsesHandler(cfg *GoblinConfig) *ResponsesHandler {
 	log, logWithSrc := newComponentLogger("responses")
 	return &ResponsesHandler{log: log, logWithSrc: logWithSrc, cfg: cfg}
@@ -61,39 +180,47 @@ func (h *ResponsesHandler) handlePostResponses() http.HandlerFunc {
 			return
 		}
 
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.WriteHeader(http.StatusOK)
-
-		flusher, canFlush := w.(http.Flusher)
+		// All pre-200 validation passed. From here on, responses are SSE events only.
 		responseID, err := generateResponseID()
 		if err != nil {
 			http.Error(w, "failed to generate response ID", http.StatusInternalServerError)
 			return
 		}
 
-		if err := emitCreated(w, responseID); err != nil {
-			h.logWithSrc.Error("failed to write SSE event", "error", err)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(http.StatusOK)
+
+		sw := newSSEWriter(w)
+
+		if err := sw.emitCreated(responseID); err != nil {
+			h.logWithSrc.Error("failed to write initial SSE event", "error", err)
 			return
 		}
-		if canFlush {
-			flusher.Flush()
-		}
 
-		h.processRequest(w, r, req, provider, modelName, responseID, flusher, canFlush)
+		usage, err := h.streamResponse(sw, r, req, provider, modelName, responseID)
+
+		// Exactly one terminal event is guaranteed: completed on success, failed on error.
+		var terminalErr error
+		if err != nil {
+			terminalErr = sw.emitFailed(responseID, "upstream_error", err.Error())
+		} else {
+			terminalErr = sw.emitCompleted(responseID, usage)
+		}
+		if terminalErr != nil {
+			h.logWithSrc.Error("failed to emit terminal SSE event", "error", terminalErr)
+		}
 	}
 }
 
-func (h *ResponsesHandler) processRequest(
-	w io.Writer,
+func (h *ResponsesHandler) streamResponse(
+	sw *sseWriter,
 	r *http.Request,
 	req ResponsesRequest,
 	provider Provider,
 	modelName string,
 	responseID string,
-	flusher http.Flusher,
-	canFlush bool,
-) {
+) (*ResponseUsage, error) {
 	messages := toChatMessages(req.Input)
 	messages = prependInstructions(messages, req.Instructions)
 	tools := convertTools(req.Tools)
@@ -116,29 +243,13 @@ func (h *ResponsesHandler) processRequest(
 
 	chatBody, err := json.Marshal(chatReq)
 	if err != nil {
-		h.logWithSrc.Error("failed to marshal chat request", "error", err)
-		if err := emitFailed(w, "upstream_error", err.Error()); err != nil {
-			h.logWithSrc.Error("failed to emit error event", "error", err)
-			return
-		}
-		if canFlush {
-			flusher.Flush()
-		}
-		return
+		return nil, fmt.Errorf("marshal chat request: %w", err)
 	}
 
 	chatURL := provider.BaseURL + "/chat/completions"
 	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, chatURL, bytes.NewReader(chatBody))
 	if err != nil {
-		h.logWithSrc.Error("failed to create upstream request", "error", err)
-		if err := emitFailed(w, "upstream_error", err.Error()); err != nil {
-			h.logWithSrc.Error("failed to emit error event", "error", err)
-			return
-		}
-		if canFlush {
-			flusher.Flush()
-		}
-		return
+		return nil, fmt.Errorf("create upstream request: %w", err)
 	}
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Accept", "text/event-stream")
@@ -151,15 +262,7 @@ func (h *ResponsesHandler) processRequest(
 
 	upstreamResp, err := http.DefaultClient.Do(upstreamReq)
 	if err != nil {
-		h.log.Error("upstream request failed", "error", err)
-		if err := emitFailed(w, "upstream_error", err.Error()); err != nil {
-			h.logWithSrc.Error("failed to emit error event", "error", err)
-			return
-		}
-		if canFlush {
-			flusher.Flush()
-		}
-		return
+		return nil, fmt.Errorf("upstream request: %w", err)
 	}
 	defer func() {
 		if err := upstreamResp.Body.Close(); err != nil {
@@ -173,26 +276,17 @@ func (h *ResponsesHandler) processRequest(
 			h.logWithSrc.Error("failed to read upstream error body", "error", readErr)
 		}
 		h.log.Error("upstream returned error", "status", upstreamResp.StatusCode, "body", string(errBody))
-		if err := emitFailed(w, "upstream_error", fmt.Sprintf("HTTP %d: %s", upstreamResp.StatusCode, string(errBody))); err != nil {
-			h.logWithSrc.Error("failed to emit error event", "error", err)
-			return
-		}
-		if canFlush {
-			flusher.Flush()
-		}
-		return
+		return nil, fmt.Errorf("upstream HTTP %d: %s", upstreamResp.StatusCode, string(errBody))
 	}
 
-	h.processUpstreamStream(w, upstreamResp.Body, responseID, flusher, canFlush)
+	return h.processUpstreamStream(sw, upstreamResp.Body, responseID)
 }
 
 func (h *ResponsesHandler) processUpstreamStream(
-	w io.Writer,
+	sw *sseWriter,
 	upstreamBody io.Reader,
 	responseID string,
-	flusher http.Flusher,
-	canFlush bool,
-) {
+) (*ResponseUsage, error) {
 	scanner := bufio.NewScanner(upstreamBody)
 	scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
 
@@ -231,7 +325,7 @@ func (h *ResponsesHandler) processUpstreamStream(
 					{Type: "output_text", Text: accumulatedContent.String()},
 				},
 			}
-			if err := emitOutputItemDone(w, item, currentItemID); err != nil {
+			if err := sw.emitOutputItemDone(item, currentItemID); err != nil {
 				return fmt.Errorf("emit output item done: %w", err)
 			}
 		}
@@ -248,10 +342,10 @@ func (h *ResponsesHandler) processUpstreamStream(
 				if err != nil {
 					return fmt.Errorf("generate function call item ID: %w", err)
 				}
-				if err := emitOutputItemAdded(w, item, tcItemID); err != nil {
+				if err := sw.emitOutputItemAdded(item, tcItemID); err != nil {
 					return fmt.Errorf("emit output item added: %w", err)
 				}
-				if err := emitOutputItemDone(w, item, tcItemID); err != nil {
+				if err := sw.emitOutputItemDone(item, tcItemID); err != nil {
 					return fmt.Errorf("emit output item done: %w", err)
 				}
 			}
@@ -303,35 +397,28 @@ func (h *ResponsesHandler) processUpstreamStream(
 			if delta.Content != nil && *delta.Content != "" {
 				if currentItemID == "" {
 					if err := startNewMessage(); err != nil {
-						h.log.Error("failed to generate message ID", "error", err)
-						return
+						return nil, fmt.Errorf("start new message: %w", err)
 					}
 					item := OutputItem{
 						Type:    "message",
 						Role:    "assistant",
 						Content: []ContentItem{},
 					}
-					if err := emitOutputItemAdded(w, item, currentItemID); err != nil {
-						h.log.Error("failed to write SSE event", "error", err)
-						return
+					if err := sw.emitOutputItemAdded(item, currentItemID); err != nil {
+						return nil, fmt.Errorf("emit output item added: %w", err)
 					}
 				}
 				accumulatedContent.WriteString(*delta.Content)
 				hasContent = true
-				if err := emitOutputTextDelta(w, *delta.Content); err != nil {
-					h.log.Error("failed to write SSE event", "error", err)
-					return
-				}
-				if canFlush {
-					flusher.Flush()
+				if err := sw.emitOutputTextDelta(*delta.Content); err != nil {
+					return nil, fmt.Errorf("emit output text delta: %w", err)
 				}
 			}
 
 			if len(delta.ToolCalls) > 0 {
 				if currentItemID == "" {
 					if err := startNewMessage(); err != nil {
-						h.log.Error("failed to generate message ID", "error", err)
-						return
+						return nil, fmt.Errorf("start new message: %w", err)
 					}
 				}
 				for _, tcDelta := range delta.ToolCalls {
@@ -342,8 +429,7 @@ func (h *ResponsesHandler) processUpstreamStream(
 						if fallbackID == "" {
 							id, err := generateCallID()
 							if err != nil {
-								h.log.Error("failed to generate call ID", "error", err)
-								return
+								return nil, fmt.Errorf("generate call ID: %w", err)
 							}
 							fallbackID = id
 						}
@@ -366,9 +452,6 @@ func (h *ResponsesHandler) processUpstreamStream(
 						if tcDelta.Function.Arguments != "" {
 							tc.arguments += tcDelta.Function.Arguments
 							hasToolCalls = true
-							if canFlush {
-								flusher.Flush()
-							}
 						}
 					}
 				}
@@ -376,8 +459,7 @@ func (h *ResponsesHandler) processUpstreamStream(
 
 			if choice.FinishReason != nil && *choice.FinishReason != "" {
 				if err := flushCurrentItem(); err != nil {
-					h.logWithSrc.Error("failed to flush current item", "error", err)
-					return
+					return nil, fmt.Errorf("flush current item: %w", err)
 				}
 			}
 		}
@@ -385,18 +467,14 @@ func (h *ResponsesHandler) processUpstreamStream(
 
 	if err := scanner.Err(); err != nil {
 		h.logWithSrc.Error("error reading upstream stream", "error", err)
+		return nil, fmt.Errorf("upstream stream error: %w", err)
 	}
 
 	if err := flushCurrentItem(); err != nil {
-		h.logWithSrc.Error("failed to flush current item", "error", err)
+		return nil, fmt.Errorf("flush remaining item: %w", err)
 	}
-	if err := emitCompleted(w, responseID, finalUsage); err != nil {
-		h.logWithSrc.Error("failed to write SSE event", "error", err)
-		return
-	}
-	if canFlush {
-		flusher.Flush()
-	}
+
+	return finalUsage, nil
 }
 
 type toolCallAccum struct {
@@ -489,119 +567,7 @@ func generateCallID() (string, error) {
 	return "call_" + string(out), nil
 }
 
-func writeSSE(w io.Writer, event string, data map[string]any) error {
-	line, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
-	if _, err := io.WriteString(w, "event: "+event+"\n"); err != nil {
-		return err
-	}
-	_, err = io.WriteString(w, "data: "+string(line)+"\n\n")
-	return err
-}
-
-func emitCreated(w io.Writer, id string) error {
-	return writeSSE(w, "response.created", map[string]any{
-		"type": "response.created",
-		"response": map[string]any{
-			"id": id,
-		},
-	})
-}
-
-func emitCompleted(w io.Writer, id string, usage *ResponseUsage) error {
-	resp := map[string]any{
-		"id":     id,
-		"status": "completed",
-	}
-	if usage != nil {
-		resp["usage"] = map[string]any{
-			"input_tokens":            usage.InputTokens,
-			"output_tokens":           usage.OutputTokens,
-			"total_tokens":            usage.TotalTokens,
-			"cached_input_tokens":     usage.CachedInputTokens,
-			"reasoning_output_tokens": usage.ReasoningOutputTokens,
-		}
-	}
-	return writeSSE(w, "response.completed", map[string]any{
-		"type":     "response.completed",
-		"response": resp,
-	})
-}
-
-func emitFailed(w io.Writer, code, message string) error {
-	id, err := generateResponseID()
-	if err != nil {
-		return err
-	}
-	return writeSSE(w, "response.failed", map[string]any{
-		"type": "response.failed",
-		"response": map[string]any{
-			"id":     id,
-			"status": "failed",
-			"error": map[string]string{
-				"code":    code,
-				"message": message,
-			},
-		},
-	})
-}
-
-func emitOutputItemAdded(w io.Writer, item OutputItem, itemID string) error {
-	itemMap := map[string]any{
-		"id":     itemID,
-		"type":   item.Type,
-		"status": "in_progress",
-	}
-	switch item.Type {
-	case "message":
-		itemMap["role"] = item.Role
-		itemMap["content"] = item.Content
-	case "function_call":
-		itemMap["name"] = item.Name
-		itemMap["arguments"] = item.Arguments
-		itemMap["call_id"] = item.CallID
-	}
-	return writeSSE(w, "response.output_item.added", map[string]any{
-		"type": "response.output_item.added",
-		"item": itemMap,
-	})
-}
-
-func emitOutputItemDone(w io.Writer, item OutputItem, itemID string) error {
-	itemMap := map[string]any{
-		"id":     itemID,
-		"type":   item.Type,
-		"status": "completed",
-	}
-	switch item.Type {
-	case "message":
-		itemMap["role"] = item.Role
-		itemMap["content"] = item.Content
-	case "function_call":
-		itemMap["name"] = item.Name
-		itemMap["arguments"] = item.Arguments
-		itemMap["call_id"] = item.CallID
-	}
-	return writeSSE(w, "response.output_item.done", map[string]any{
-		"type": "response.output_item.done",
-		"item": itemMap,
-	})
-}
-
-func emitOutputTextDelta(w io.Writer, delta string) error {
-	return writeSSE(w, "response.output_text.delta", map[string]any{
-		"type":  "response.output_text.delta",
-		"delta": delta,
-	})
-}
-
 func toChatMessages(input []InputItem) []ChatMessage {
-	if len(input) == 0 {
-		return nil
-	}
-
 	messages := make([]ChatMessage, 0, len(input))
 
 	for _, item := range input {

@@ -576,9 +576,10 @@ func TestGenerateCallID_Uniqueness(t *testing.T) {
 	}
 }
 
-func TestWriteSSE(t *testing.T) {
-	var buf bytes.Buffer
-	if err := writeSSE(&buf, "response.created", map[string]any{
+func TestSSEWriter_emit(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sw := newSSEWriter(rec)
+	if err := sw.emit("response.created", map[string]any{
 		"type": "response.created",
 		"response": map[string]any{
 			"id": "resp_abc",
@@ -587,10 +588,10 @@ func TestWriteSSE(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := buf.String()
-	lines := strings.Split(strings.TrimSpace(output), "\n")
+	body := rec.Body.String()
+	lines := strings.Split(strings.TrimSpace(body), "\n")
 	if len(lines) != 2 {
-		t.Fatalf("got %d lines, want 2\n%s", len(lines), output)
+		t.Fatalf("got %d lines, want 2\n%s", len(lines), body)
 	}
 	if !strings.HasPrefix(lines[0], "event: response.created") {
 		t.Errorf("line 0 = %q, want event prefix", lines[0])
@@ -598,40 +599,43 @@ func TestWriteSSE(t *testing.T) {
 	if !strings.HasPrefix(lines[1], "data: ") {
 		t.Errorf("line 1 = %q, want data prefix", lines[1])
 	}
-	if !strings.HasSuffix(output, "\n\n") {
-		t.Errorf("output %q does not end with double newline", output)
+	if !strings.HasSuffix(body, "\n\n") {
+		t.Errorf("output %q does not end with double newline", body)
 	}
 }
 
-func TestWriteSSE_EmptyData(t *testing.T) {
-	var buf bytes.Buffer
-	if err := writeSSE(&buf, "response.incomplete", nil); err != nil {
+func TestSSEWriter_emit_NilData(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sw := newSSEWriter(rec)
+	if err := sw.emit("response.incomplete", nil); err != nil {
 		t.Fatal(err)
 	}
 
-	output := buf.String()
-	if !strings.Contains(output, "data: null") {
-		t.Errorf("output %q should contain data: null", output)
+	body := rec.Body.String()
+	if !strings.Contains(body, "data: null") {
+		t.Errorf("output %q should contain data: null", body)
 	}
 }
 
-func TestEmitCreated(t *testing.T) {
-	var buf bytes.Buffer
-	if err := emitCreated(&buf, "resp_abc123"); err != nil {
+func TestSSEWriter_EmitCreated(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sw := newSSEWriter(rec)
+	if err := sw.emitCreated("resp_abc123"); err != nil {
 		t.Fatal(err)
 	}
 
-	output := buf.String()
-	if !strings.Contains(output, "event: response.created") {
-		t.Errorf("missing event name: %s", output)
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: response.created") {
+		t.Errorf("missing event name: %s", body)
 	}
-	if !strings.Contains(output, "resp_abc123") {
-		t.Errorf("missing response ID: %s", output)
+	if !strings.Contains(body, "resp_abc123") {
+		t.Errorf("missing response ID: %s", body)
 	}
 }
 
-func TestEmitCompleted(t *testing.T) {
-	var buf bytes.Buffer
+func TestSSEWriter_EmitCompleted(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sw := newSSEWriter(rec)
 	usage := &ResponseUsage{
 		InputTokens:           10,
 		OutputTokens:          20,
@@ -639,58 +643,61 @@ func TestEmitCompleted(t *testing.T) {
 		CachedInputTokens:     5,
 		ReasoningOutputTokens: 3,
 	}
-	if err := emitCompleted(&buf, "resp_abc123", usage); err != nil {
+	if err := sw.emitCompleted("resp_abc123", usage); err != nil {
 		t.Fatal(err)
 	}
 
-	output := buf.String()
-	if !strings.Contains(output, "event: response.completed") {
-		t.Errorf("missing event name: %s", output)
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: response.completed") {
+		t.Errorf("missing event name: %s", body)
 	}
-	if !strings.Contains(output, "input_tokens") {
-		t.Errorf("missing input_tokens: %s", output)
+	if !strings.Contains(body, "input_tokens") {
+		t.Errorf("missing input_tokens: %s", body)
 	}
-	if !strings.Contains(output, "cached_input_tokens") {
-		t.Errorf("missing cached_input_tokens: %s", output)
+	if !strings.Contains(body, "cached_input_tokens") {
+		t.Errorf("missing cached_input_tokens: %s", body)
 	}
-	if !strings.Contains(output, "reasoning_output_tokens") {
-		t.Errorf("missing reasoning_output_tokens: %s", output)
+	if !strings.Contains(body, "reasoning_output_tokens") {
+		t.Errorf("missing reasoning_output_tokens: %s", body)
 	}
 }
 
-func TestEmitCompleted_NilUsage(t *testing.T) {
-	var buf bytes.Buffer
-	if err := emitCompleted(&buf, "resp_abc123", nil); err != nil {
+func TestSSEWriter_EmitCompleted_NilUsage(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sw := newSSEWriter(rec)
+	if err := sw.emitCompleted("resp_abc123", nil); err != nil {
 		t.Fatal(err)
 	}
 
-	output := buf.String()
-	if !strings.Contains(output, "event: response.completed") {
-		t.Errorf("missing event name: %s", output)
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: response.completed") {
+		t.Errorf("missing event name: %s", body)
 	}
-	if strings.Contains(output, "usage") {
-		t.Errorf("should not contain usage when nil: %s", output)
+	if strings.Contains(body, "usage") {
+		t.Errorf("should not contain usage when nil: %s", body)
 	}
 }
 
-func TestEmitOutputTextDelta(t *testing.T) {
-	var buf bytes.Buffer
-	if err := emitOutputTextDelta(&buf, "Hello, "); err != nil {
+func TestSSEWriter_EmitOutputTextDelta(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sw := newSSEWriter(rec)
+	if err := sw.emitOutputTextDelta("Hello, "); err != nil {
 		t.Fatal(err)
 	}
 
-	output := buf.String()
-	if !strings.Contains(output, "event: response.output_text.delta") {
-		t.Errorf("missing event name: %s", output)
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: response.output_text.delta") {
+		t.Errorf("missing event name: %s", body)
 	}
-	if !strings.Contains(output, "Hello, ") {
-		t.Errorf("missing delta text: %s", output)
+	if !strings.Contains(body, "Hello, ") {
+		t.Errorf("missing delta text: %s", body)
 	}
 }
 
-func TestEmitOutputItemAdded(t *testing.T) {
-	var buf bytes.Buffer
-	if err := emitOutputItemAdded(&buf, OutputItem{
+func TestSSEWriter_EmitOutputItemAdded(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sw := newSSEWriter(rec)
+	if err := sw.emitOutputItemAdded(OutputItem{
 		Type: "message",
 		Role: "assistant",
 		Content: []ContentItem{
@@ -700,18 +707,19 @@ func TestEmitOutputItemAdded(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := buf.String()
-	if !strings.Contains(output, "event: response.output_item.added") {
-		t.Errorf("missing event name: %s", output)
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: response.output_item.added") {
+		t.Errorf("missing event name: %s", body)
 	}
-	if !strings.Contains(output, "msg_abc") {
-		t.Errorf("missing item id: %s", output)
+	if !strings.Contains(body, "msg_abc") {
+		t.Errorf("missing item id: %s", body)
 	}
 }
 
-func TestEmitOutputItemDone(t *testing.T) {
-	var buf bytes.Buffer
-	if err := emitOutputItemDone(&buf, OutputItem{
+func TestSSEWriter_EmitOutputItemDone(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sw := newSSEWriter(rec)
+	if err := sw.emitOutputItemDone(OutputItem{
 		Type: "message",
 		Role: "assistant",
 		Content: []ContentItem{
@@ -721,52 +729,38 @@ func TestEmitOutputItemDone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := buf.String()
-	if !strings.Contains(output, "event: response.output_item.done") {
-		t.Errorf("missing event name: %s", output)
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: response.output_item.done") {
+		t.Errorf("missing event name: %s", body)
 	}
-	if !strings.Contains(output, "hello") {
-		t.Errorf("missing content: %s", output)
-	}
-}
-
-func TestEmitFailed(t *testing.T) {
-	var buf bytes.Buffer
-	if err := emitFailed(&buf, "upstream_error", "something went wrong"); err != nil {
-		t.Fatal(err)
-	}
-
-	output := buf.String()
-	if !strings.Contains(output, "event: response.failed") {
-		t.Errorf("missing event name: %s", output)
-	}
-	if !strings.Contains(output, "upstream_error") {
-		t.Errorf("missing error code: %s", output)
-	}
-	if !strings.Contains(output, "something went wrong") {
-		t.Errorf("missing error message: %s", output)
+	if !strings.Contains(body, "hello") {
+		t.Errorf("missing content: %s", body)
 	}
 }
 
-func TestWriteSSE_ToHTTPResponse(t *testing.T) {
-	w := httptest.NewRecorder()
-	if err := writeSSE(w, "response.created", map[string]any{"type": "response.created"}); err != nil {
+func TestSSEWriter_EmitFailed(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sw := newSSEWriter(rec)
+	if err := sw.emitFailed("resp_abc", "upstream_error", "something went wrong"); err != nil {
 		t.Fatal(err)
 	}
 
-	body := w.Body.String()
-	if !strings.Contains(body, "event: response.created") {
-		t.Errorf("body missing event: %s", body)
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: response.failed") {
+		t.Errorf("missing event name: %s", body)
 	}
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	if !strings.Contains(body, "upstream_error") {
+		t.Errorf("missing error code: %s", body)
+	}
+	if !strings.Contains(body, "something went wrong") {
+		t.Errorf("missing error message: %s", body)
 	}
 }
 
 func TestToChatMessages_EmptyInput(t *testing.T) {
 	got := toChatMessages(nil)
-	if got != nil {
-		t.Errorf("got %v, want nil", got)
+	if len(got) != 0 {
+		t.Errorf("got %d messages, want 0", len(got))
 	}
 }
 
