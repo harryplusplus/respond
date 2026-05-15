@@ -163,8 +163,6 @@ func TestToSnakeCase(t *testing.T) {
 	}
 }
 
-// -- test helpers for TestCheckMapstructureTags --
-
 type validStructAllTagged struct {
 	FieldOne string `yaml:"field_one"`
 	FieldTwo int    `yaml:"field_two"`
@@ -467,6 +465,62 @@ func TestParseConfig(t *testing.T) {
 				t.Errorf("parseConfig(%+v) unexpected error: %v", tt.cfg, err)
 			}
 		})
+	}
+}
+
+func TestHydrateModels_NilModel(t *testing.T) {
+	cfg := &Config{
+		Providers: map[string]Provider{
+			"test": {
+				Models: map[string]*ModelInfo{
+					"my-model": nil,
+				},
+			},
+		},
+	}
+	HydrateModels(cfg)
+
+	m := cfg.Providers["test"].Models["my-model"]
+	if m.Slug != "test/my-model" {
+		t.Errorf("Slug = %q, want %q", m.Slug, "test/my-model")
+	}
+	if m.Priority == nil || *m.Priority != 1 {
+		t.Error("Priority should default to 1")
+	}
+	if m.Visibility != ModelVisibilityList {
+		t.Errorf("Visibility = %q, want %q", m.Visibility, ModelVisibilityList)
+	}
+}
+
+func TestHydrateModels_PreservesExplicitFields(t *testing.T) {
+	p := new(3)
+	cfg := &Config{
+		Providers: map[string]Provider{
+			"crof": {
+				Models: map[string]*ModelInfo{
+					"kimi": {
+						DisplayName: "Kimi K2.6",
+						Priority:    p,
+						Visibility:  "hidden",
+					},
+				},
+			},
+		},
+	}
+	HydrateModels(cfg)
+
+	m := cfg.Providers["crof"].Models["kimi"]
+	if m.Slug != "crof/kimi" {
+		t.Errorf("Slug = %q, want %q", m.Slug, "crof/kimi")
+	}
+	if m.DisplayName != "Kimi K2.6" {
+		t.Errorf("DisplayName = %q, want %q", m.DisplayName, "Kimi K2.6")
+	}
+	if *m.Priority != 3 {
+		t.Errorf("Priority = %d, want 3", *m.Priority)
+	}
+	if m.Visibility != "hidden" {
+		t.Errorf("Visibility = %q, want %q", m.Visibility, "hidden")
 	}
 }
 

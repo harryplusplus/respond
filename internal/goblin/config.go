@@ -102,11 +102,11 @@ func parseConfig(cfg *Config) error {
 		return fmt.Errorf("port must be between 1 and 65535, got %d", portNum)
 	}
 
-	hydrateModels(cfg)
+	HydrateModels(cfg)
 	return nil
 }
 
-func hydrateModels(cfg *Config) {
+func HydrateModels(cfg *Config) {
 	for name, p := range cfg.Providers {
 		for slug, m := range p.Models {
 			if m == nil {
