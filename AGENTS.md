@@ -26,7 +26,7 @@ Go 명령줄 인터페이스는 구성되어 있다.
 - 함수/변수 위 doc string 금지. 함수명이 설명을 대신해야 한다.
 - `//`, `// TODO`, `// NOTE` 모두 동일 기준 적용.
 - 커밋 메시지는 [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) 스펙을 따라라.
-- Go 파일 수정 후 `go fmt ./...`, `go vet ./...`, `staticcheck ./...`, `errcheck ./...`를 실행해라.
+- Go 파일 수정 후 `golangci-lint fmt && golangci-lint run`을 실행해라.
 - 작업 완료 후 이 가이드라인을 모두 지켰는지 다시 확인하고 어긴 부분이 있으면 고쳐라.
 
 ## 통합 테스트
