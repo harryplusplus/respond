@@ -2,7 +2,6 @@ package goblin
 
 import (
 	"context"
-	_ "embed"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -21,11 +20,6 @@ func newServer(cfg *GoblinConfig) *server {
 	log, srcLog := newComponentLogger("server")
 	return &server{log: log, srcLog: srcLog, cfg: cfg}
 }
-
-// Source: https://github.com/openai/codex/blob/main/codex-rs/models-manager/prompt.md (Apache-2.0)
-//
-//go:embed base_instructions.md
-var baseInstructions string
 
 func RunServer() error {
 	return newServer(goblinConfig.Load()).run()
