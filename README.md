@@ -62,6 +62,7 @@ npm은 패키지 압축 파일의 내용이 바뀌었는지 검증할 방법이 
 ```bash
 go install honnef.co/go/tools/cmd/staticcheck@latest
 go install github.com/kisielk/errcheck@latest
+go install golang.org/x/tools/gopls@latest
 ```
 
 VSCode의 gopls 진단을 CLI에서 재현하려면:
