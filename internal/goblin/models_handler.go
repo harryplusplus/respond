@@ -8,18 +8,18 @@ import (
 	"slices"
 )
 
-type ModelsHandler struct {
+type modelsHandler struct {
 	log        *slog.Logger
 	logWithSrc *slog.Logger
 	cfg        *GoblinConfig
 }
 
-func newModelsHandler(cfg *GoblinConfig) *ModelsHandler {
+func newModelsHandler(cfg *GoblinConfig) *modelsHandler {
 	log, logWithSrc := newComponentLogger("models")
-	return &ModelsHandler{log: log, logWithSrc: logWithSrc, cfg: cfg}
+	return &modelsHandler{log: log, logWithSrc: logWithSrc, cfg: cfg}
 }
 
-func (h *ModelsHandler) handleGetModels() http.HandlerFunc {
+func (h *modelsHandler) handleGetModels() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		models := make([]ModelInfo, 0)
 		for _, p := range h.cfg.Providers {
@@ -37,7 +37,7 @@ func (h *ModelsHandler) handleGetModels() http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 
-		if err := json.NewEncoder(w).Encode(ModelsResponse{Models: models}); err != nil {
+		if err := json.NewEncoder(w).Encode(modelsResponse{Models: models}); err != nil {
 			h.logWithSrc.Error("failed to encode models response", "error", err)
 		}
 	}

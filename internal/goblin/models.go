@@ -69,7 +69,7 @@ type ModelInfo struct {
 	ExperimentalSupportedTools []any                   `yaml:"experimental_supported_tools" json:"experimental_supported_tools"`
 }
 
-type ModelsResponse struct {
+type modelsResponse struct {
 	Models []ModelInfo `json:"models"`
 }
 

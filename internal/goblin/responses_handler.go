@@ -20,7 +20,7 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 )
 
-type ResponsesHandler struct {
+type responsesHandler struct {
 	log        *slog.Logger
 	logWithSrc *slog.Logger
 	cfg        *GoblinConfig
@@ -121,12 +121,12 @@ func (s *sseWriter) emitOutputTextDelta(delta string) error {
 	})
 }
 
-func newResponsesHandler(cfg *GoblinConfig) *ResponsesHandler {
+func newResponsesHandler(cfg *GoblinConfig) *responsesHandler {
 	log, logWithSrc := newComponentLogger("responses")
-	return &ResponsesHandler{log: log, logWithSrc: logWithSrc, cfg: cfg}
+	return &responsesHandler{log: log, logWithSrc: logWithSrc, cfg: cfg}
 }
 
-func (h *ResponsesHandler) handlePostResponses() http.HandlerFunc {
+func (h *responsesHandler) handlePostResponses() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ct := r.Header.Get("Content-Type")
 		if ct != "" {
@@ -209,7 +209,7 @@ func (h *ResponsesHandler) handlePostResponses() http.HandlerFunc {
 	}
 }
 
-func (h *ResponsesHandler) streamResponse(
+func (h *responsesHandler) streamResponse(
 	ctx context.Context,
 	sw *sseWriter,
 	req responses.ResponseNewParams,
@@ -257,7 +257,7 @@ func (h *ResponsesHandler) streamResponse(
 	return h.processUpstreamStream(sw, stream, responseID)
 }
 
-func (h *ResponsesHandler) processUpstreamStream(
+func (h *responsesHandler) processUpstreamStream(
 	sw *sseWriter,
 	stream *ssestream.Stream[openai.ChatCompletionChunk],
 	responseID string,
@@ -499,7 +499,7 @@ func generateCallID() (string, error) {
 	return "call_" + string(out), nil
 }
 
-func (h *ResponsesHandler) toChatCompletionMessages(req responses.ResponseNewParams) []openai.ChatCompletionMessageParamUnion {
+func (h *responsesHandler) toChatCompletionMessages(req responses.ResponseNewParams) []openai.ChatCompletionMessageParamUnion {
 	instructions := req.Instructions
 	input := req.Input
 
@@ -553,7 +553,7 @@ func (h *ResponsesHandler) toChatCompletionMessages(req responses.ResponseNewPar
 	return messages
 }
 
-func (h *ResponsesHandler) toChatMessageParam(item responses.ResponseInputItemUnionParam) *openai.ChatCompletionMessageParamUnion {
+func (h *responsesHandler) toChatMessageParam(item responses.ResponseInputItemUnionParam) *openai.ChatCompletionMessageParamUnion {
 	if item.OfMessage != nil {
 		return convertMessageItem(item.OfMessage)
 	}
