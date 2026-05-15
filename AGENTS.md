@@ -32,7 +32,7 @@ Go 명령줄 인터페이스는 구성되어 있다.
 ## 통합 테스트
 
 ```bash
-GOBLIN_INTEGRATION=1 go test ./test/integration/ -v -count=1 -parallel=1 -timeout=900s
+GOBLIN_INTEGRATION=1 go test ./test/integration/ -v -count=1 -parallel=1 -timeout=15m
 ```
 
 - `GOBLIN_INTEGRATION=1` 환경변수로 통합 테스트 활성화
