@@ -73,7 +73,7 @@ func (h *ResponsesHandler) handlePostResponses() http.HandlerFunc {
 		}
 
 		if err := emitCreated(w, responseID); err != nil {
-			h.log.Error("failed to write SSE event", "error", err)
+			h.logWithSrc.Error("failed to write SSE event", "error", err)
 			return
 		}
 		if canFlush {
@@ -116,9 +116,9 @@ func (h *ResponsesHandler) processRequest(
 
 	chatBody, err := json.Marshal(chatReq)
 	if err != nil {
-		h.log.Error("failed to marshal chat request", "error", err)
+		h.logWithSrc.Error("failed to marshal chat request", "error", err)
 		if err := emitFailed(w, "upstream_error", err.Error()); err != nil {
-			h.log.Error("failed to emit error event", "error", err)
+			h.logWithSrc.Error("failed to emit error event", "error", err)
 			return
 		}
 		if canFlush {
@@ -130,9 +130,9 @@ func (h *ResponsesHandler) processRequest(
 	chatURL := provider.BaseURL + "/chat/completions"
 	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, chatURL, bytes.NewReader(chatBody))
 	if err != nil {
-		h.log.Error("failed to create upstream request", "error", err)
+		h.logWithSrc.Error("failed to create upstream request", "error", err)
 		if err := emitFailed(w, "upstream_error", err.Error()); err != nil {
-			h.log.Error("failed to emit error event", "error", err)
+			h.logWithSrc.Error("failed to emit error event", "error", err)
 			return
 		}
 		if canFlush {
@@ -153,7 +153,7 @@ func (h *ResponsesHandler) processRequest(
 	if err != nil {
 		h.log.Error("upstream request failed", "error", err)
 		if err := emitFailed(w, "upstream_error", err.Error()); err != nil {
-			h.log.Error("failed to emit error event", "error", err)
+			h.logWithSrc.Error("failed to emit error event", "error", err)
 			return
 		}
 		if canFlush {
@@ -170,11 +170,11 @@ func (h *ResponsesHandler) processRequest(
 	if upstreamResp.StatusCode != http.StatusOK {
 		errBody, readErr := io.ReadAll(upstreamResp.Body)
 		if readErr != nil {
-			h.log.Error("failed to read upstream error body", "error", readErr)
+			h.logWithSrc.Error("failed to read upstream error body", "error", readErr)
 		}
 		h.log.Error("upstream returned error", "status", upstreamResp.StatusCode, "body", string(errBody))
 		if err := emitFailed(w, "upstream_error", fmt.Sprintf("HTTP %d: %s", upstreamResp.StatusCode, string(errBody))); err != nil {
-			h.log.Error("failed to emit error event", "error", err)
+			h.logWithSrc.Error("failed to emit error event", "error", err)
 			return
 		}
 		if canFlush {
@@ -218,9 +218,9 @@ func (h *ResponsesHandler) processUpstreamStream(
 		return nil
 	}
 
-	flushCurrentItem := func() {
+	flushCurrentItem := func() error {
 		if currentItemID == "" {
-			return
+			return nil
 		}
 
 		if hasContent {
@@ -232,8 +232,7 @@ func (h *ResponsesHandler) processUpstreamStream(
 				},
 			}
 			if err := emitOutputItemDone(w, item, currentItemID); err != nil {
-				h.log.Error("failed to write SSE event", "error", err)
-				return
+				return fmt.Errorf("emit output item done: %w", err)
 			}
 		}
 
@@ -247,21 +246,19 @@ func (h *ResponsesHandler) processUpstreamStream(
 				}
 				tcItemID, err := generateFunctionCallItemID()
 				if err != nil {
-					h.log.Error("failed to generate item ID", "error", err)
-					return
+					return fmt.Errorf("generate function call item ID: %w", err)
 				}
 				if err := emitOutputItemAdded(w, item, tcItemID); err != nil {
-					h.log.Error("failed to write SSE event", "error", err)
-					return
+					return fmt.Errorf("emit output item added: %w", err)
 				}
 				if err := emitOutputItemDone(w, item, tcItemID); err != nil {
-					h.log.Error("failed to write SSE event", "error", err)
-					return
+					return fmt.Errorf("emit output item done: %w", err)
 				}
 			}
 		}
 
 		currentItemID = ""
+		return nil
 	}
 
 	for scanner.Scan() {
@@ -378,18 +375,23 @@ func (h *ResponsesHandler) processUpstreamStream(
 			}
 
 			if choice.FinishReason != nil && *choice.FinishReason != "" {
-				flushCurrentItem()
+				if err := flushCurrentItem(); err != nil {
+					h.logWithSrc.Error("failed to flush current item", "error", err)
+					return
+				}
 			}
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		h.log.Error("error reading upstream stream", "error", err)
+		h.logWithSrc.Error("error reading upstream stream", "error", err)
 	}
 
-	flushCurrentItem()
+	if err := flushCurrentItem(); err != nil {
+		h.logWithSrc.Error("failed to flush current item", "error", err)
+	}
 	if err := emitCompleted(w, responseID, finalUsage); err != nil {
-		h.log.Error("failed to write SSE event", "error", err)
+		h.logWithSrc.Error("failed to write SSE event", "error", err)
 		return
 	}
 	if canFlush {

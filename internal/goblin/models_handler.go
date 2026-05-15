@@ -38,7 +38,7 @@ func (h *ModelsHandler) handleGetModels() http.HandlerFunc {
 		w.WriteHeader(http.StatusOK)
 
 		if err := json.NewEncoder(w).Encode(ModelsResponse{Models: models}); err != nil {
-			h.log.Error("failed to encode models response", "error", err)
+			h.logWithSrc.Error("failed to encode models response", "error", err)
 		}
 	}
 }
