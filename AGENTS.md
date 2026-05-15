@@ -31,6 +31,7 @@ Go 명령줄 인터페이스는 구성되어 있다.
   `go vet -tags=integration ./test/integration/`
   `errcheck -tags=integration ./test/integration/`
   `staticcheck -tags=integration ./test/integration/`
+- 작업 완료 후 이 가이드라인을 모두 지켰는지 다시 확인하고 어긴 부분이 있으면 고쳐라.
 
 ## 통합 테스트
 
