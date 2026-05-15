@@ -1,8 +1,7 @@
 package goblin
 
 import (
-	"bufio"
-	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -12,6 +11,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/packages/ssestream"
+	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 type ResponsesHandler struct {
@@ -56,7 +62,7 @@ func (s *sseWriter) emitCreated(id string) error {
 	})
 }
 
-func (s *sseWriter) emitCompleted(id string, usage *ResponseUsage) error {
+func (s *sseWriter) emitCompleted(id string, usage *responses.ResponseUsage) error {
 	resp := map[string]any{
 		"id":     id,
 		"status": "completed",
@@ -66,8 +72,8 @@ func (s *sseWriter) emitCompleted(id string, usage *ResponseUsage) error {
 			"input_tokens":            usage.InputTokens,
 			"output_tokens":           usage.OutputTokens,
 			"total_tokens":            usage.TotalTokens,
-			"cached_input_tokens":     usage.CachedInputTokens,
-			"reasoning_output_tokens": usage.ReasoningOutputTokens,
+			"cached_input_tokens":     usage.InputTokensDetails.CachedTokens,
+			"reasoning_output_tokens": usage.OutputTokensDetails.ReasoningTokens,
 		}
 	}
 	return s.emit("response.completed", map[string]any{
@@ -90,45 +96,21 @@ func (s *sseWriter) emitFailed(id, code, message string) error {
 	})
 }
 
-func (s *sseWriter) emitOutputItemAdded(item OutputItem, itemID string) error {
-	itemMap := map[string]any{
-		"id":     itemID,
-		"type":   item.Type,
-		"status": "in_progress",
-	}
-	switch item.Type {
-	case "message":
-		itemMap["role"] = item.Role
-		itemMap["content"] = item.Content
-	case "function_call":
-		itemMap["name"] = item.Name
-		itemMap["arguments"] = item.Arguments
-		itemMap["call_id"] = item.CallID
-	}
+func (s *sseWriter) emitOutputItemAdded(item map[string]any, itemID string) error {
+	item["id"] = itemID
+	item["status"] = "in_progress"
 	return s.emit("response.output_item.added", map[string]any{
 		"type": "response.output_item.added",
-		"item": itemMap,
+		"item": item,
 	})
 }
 
-func (s *sseWriter) emitOutputItemDone(item OutputItem, itemID string) error {
-	itemMap := map[string]any{
-		"id":     itemID,
-		"type":   item.Type,
-		"status": "completed",
-	}
-	switch item.Type {
-	case "message":
-		itemMap["role"] = item.Role
-		itemMap["content"] = item.Content
-	case "function_call":
-		itemMap["name"] = item.Name
-		itemMap["arguments"] = item.Arguments
-		itemMap["call_id"] = item.CallID
-	}
+func (s *sseWriter) emitOutputItemDone(item map[string]any, itemID string) error {
+	item["id"] = itemID
+	item["status"] = "completed"
 	return s.emit("response.output_item.done", map[string]any{
 		"type": "response.output_item.done",
-		"item": itemMap,
+		"item": item,
 	})
 }
 
@@ -155,19 +137,34 @@ func (h *ResponsesHandler) handlePostResponses() http.HandlerFunc {
 			}
 		}
 
-		var req ResponsesRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "failed to read body", http.StatusBadRequest)
+			return
+		}
+
+		var req responses.ResponseNewParams
+		if err := json.Unmarshal(body, &req); err != nil {
 			h.log.Error("failed to decode request", "error", err)
 			http.Error(w, fmt.Sprintf("invalid JSON body: %s", err), http.StatusBadRequest)
 			return
 		}
 
-		if !req.Stream {
+		// ResponseNewParams has no Stream field (SDK injects it via NewStreaming),
+		// so check it from the same body — body is valid JSON proven above.
+		var raw struct {
+			Stream bool `json:"stream"`
+		}
+		if err := json.Unmarshal(body, &raw); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		if !raw.Stream {
 			http.Error(w, "stream must be true", http.StatusBadRequest)
 			return
 		}
 
-		providerName, modelName, err := parseModelSlug(req.Model)
+		providerName, modelName, err := parseModelSlug(string(req.Model))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -198,9 +195,8 @@ func (h *ResponsesHandler) handlePostResponses() http.HandlerFunc {
 			return
 		}
 
-		usage, err := h.streamResponse(sw, r, req, provider, modelName, responseID)
+		usage, err := h.streamResponse(r.Context(), sw, req, provider, modelName, responseID)
 
-		// Exactly one terminal event is guaranteed: completed on success, failed on error.
 		var terminalErr error
 		if err != nil {
 			terminalErr = sw.emitFailed(responseID, "upstream_error", err.Error())
@@ -214,89 +210,65 @@ func (h *ResponsesHandler) handlePostResponses() http.HandlerFunc {
 }
 
 func (h *ResponsesHandler) streamResponse(
+	ctx context.Context,
 	sw *sseWriter,
-	r *http.Request,
-	req ResponsesRequest,
+	req responses.ResponseNewParams,
 	provider Provider,
 	modelName string,
 	responseID string,
-) (*ResponseUsage, error) {
-	messages := toChatMessages(req.Input)
-	messages = prependInstructions(messages, req.Instructions)
-	tools := convertTools(req.Tools)
+) (*responses.ResponseUsage, error) {
+	messages := h.toChatCompletionMessages(req)
 
-	chatReq := ChatCompletionRequest{
-		Model:    modelName,
+	opts := []option.RequestOption{
+		option.WithBaseURL(provider.BaseURL),
+	}
+	if provider.EnvKey != "" {
+		if apiKey := os.Getenv(provider.EnvKey); apiKey != "" {
+			opts = append(opts, option.WithAPIKey(apiKey))
+		}
+	}
+
+	params := openai.ChatCompletionNewParams{
+		Model:    shared.ChatModel(modelName),
 		Messages: messages,
-		Stream:   true,
-		StreamOptions: &StreamOptions{
-			IncludeUsage: true,
+		StreamOptions: openai.ChatCompletionStreamOptionsParam{
+			IncludeUsage: openai.Bool(true),
 		},
 	}
-	if len(tools) > 0 {
-		chatReq.Tools = tools
-		chatReq.ToolChoice = req.ToolChoice
-		if req.ParallelToolCalls {
-			chatReq.ParallelToolCalls = new(true)
+
+	if len(req.Tools) > 0 {
+		params.Tools = toChatTools(req.Tools)
+		if v := req.ToolChoice; v.OfToolChoiceMode.Valid() {
+			params.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{
+				OfAuto: param.NewOpt(string(v.OfToolChoiceMode.Value)),
+			}
+		}
+		if v := req.ParallelToolCalls; v.Valid() && v.Value {
+			params.ParallelToolCalls = openai.Bool(true)
 		}
 	}
 
-	chatBody, err := json.Marshal(chatReq)
-	if err != nil {
-		return nil, fmt.Errorf("marshal chat request: %w", err)
+	svc := openai.NewChatCompletionService(opts...)
+	stream := svc.NewStreaming(ctx, params)
+	if stream.Err() != nil {
+		return nil, fmt.Errorf("upstream request: %w", stream.Err())
 	}
 
-	chatURL := provider.BaseURL + "/chat/completions"
-	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, chatURL, bytes.NewReader(chatBody))
-	if err != nil {
-		return nil, fmt.Errorf("create upstream request: %w", err)
-	}
-	upstreamReq.Header.Set("Content-Type", "application/json")
-	upstreamReq.Header.Set("Accept", "text/event-stream")
-	if provider.EnvKey != "" {
-		apiKey := resolveAPIKey(provider.EnvKey)
-		if apiKey != "" {
-			upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
-		}
-	}
-
-	upstreamResp, err := http.DefaultClient.Do(upstreamReq)
-	if err != nil {
-		return nil, fmt.Errorf("upstream request: %w", err)
-	}
-	defer func() {
-		if err := upstreamResp.Body.Close(); err != nil {
-			h.logWithSrc.Error("failed to close upstream response body", "error", err)
-		}
-	}()
-
-	if upstreamResp.StatusCode != http.StatusOK {
-		errBody, readErr := io.ReadAll(upstreamResp.Body)
-		if readErr != nil {
-			h.logWithSrc.Error("failed to read upstream error body", "error", readErr)
-		}
-		h.log.Error("upstream returned error", "status", upstreamResp.StatusCode, "body", string(errBody))
-		return nil, fmt.Errorf("upstream HTTP %d: %s", upstreamResp.StatusCode, string(errBody))
-	}
-
-	return h.processUpstreamStream(sw, upstreamResp.Body, responseID)
+	return h.processUpstreamStream(sw, stream, responseID)
 }
 
 func (h *ResponsesHandler) processUpstreamStream(
 	sw *sseWriter,
-	upstreamBody io.Reader,
+	stream *ssestream.Stream[openai.ChatCompletionChunk],
 	responseID string,
-) (*ResponseUsage, error) {
-	scanner := bufio.NewScanner(upstreamBody)
-	scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
-
+) (*responses.ResponseUsage, error) {
 	var (
 		currentItemID        string
 		accumulatedContent   strings.Builder
 		accumulatedToolCalls = make(map[int]*toolCallAccum)
 		hasContent           bool
 		hasToolCalls         bool
-		finalUsage           *ResponseUsage
+		finalUsage           *responses.ResponseUsage
 	)
 
 	startNewMessage := func() error {
@@ -318,25 +290,22 @@ func (h *ResponsesHandler) processUpstreamStream(
 		}
 
 		if hasContent {
-			item := OutputItem{
-				Type: "message",
-				Role: "assistant",
-				Content: []ContentItem{
-					{Type: "output_text", Text: accumulatedContent.String()},
-				},
-			}
-			if err := sw.emitOutputItemDone(item, currentItemID); err != nil {
+			if err := sw.emitOutputItemDone(map[string]any{
+				"type":    "message",
+				"role":    "assistant",
+				"content": []map[string]any{{"type": "output_text", "text": accumulatedContent.String()}},
+			}, currentItemID); err != nil {
 				return fmt.Errorf("emit output item done: %w", err)
 			}
 		}
 
 		if hasToolCalls && len(accumulatedToolCalls) > 0 {
 			for _, tc := range accumulatedToolCalls {
-				item := OutputItem{
-					Type:      "function_call",
-					Name:      tc.name,
-					Arguments: tc.arguments,
-					CallID:    tc.id,
+				item := map[string]any{
+					"type":      "function_call",
+					"name":      tc.name,
+					"arguments": tc.arguments,
+					"call_id":   tc.id,
 				}
 				tcItemID, err := generateFunctionCallItemID()
 				if err != nil {
@@ -355,62 +324,41 @@ func (h *ResponsesHandler) processUpstreamStream(
 		return nil
 	}
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	for stream.Next() {
+		chunk := stream.Current()
 
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		data := strings.TrimPrefix(line, "data: ")
-		data = strings.TrimSpace(data)
-
-		if data == "[DONE]" {
-			continue
-		}
-
-		var chunk ChatCompletionChunk
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			h.log.Debug("failed to parse chunk", "data", data, "error", err)
-			continue
-		}
-
-		if chunk.Usage != nil {
-			finalUsage = &ResponseUsage{
-				InputTokens:           chunk.Usage.PromptTokens,
-				OutputTokens:          chunk.Usage.CompletionTokens,
-				TotalTokens:           chunk.Usage.TotalTokens,
-				CachedInputTokens:     0,
-				ReasoningOutputTokens: 0,
+		if chunk.JSON.Usage.Valid() {
+			u := chunk.Usage
+			usage := &responses.ResponseUsage{
+				InputTokens:  u.PromptTokens,
+				OutputTokens: u.CompletionTokens,
+				TotalTokens:  u.TotalTokens,
 			}
-			if chunk.Usage.PromptTokensDetails != nil {
-				finalUsage.CachedInputTokens = chunk.Usage.PromptTokensDetails.CachedTokens
+			if u.CompletionTokensDetails.ReasoningTokens > 0 {
+				usage.OutputTokensDetails.ReasoningTokens = u.CompletionTokensDetails.ReasoningTokens
 			}
-			if chunk.Usage.CompletionTokensDetails != nil {
-				finalUsage.ReasoningOutputTokens = chunk.Usage.CompletionTokensDetails.ReasoningTokens
-			}
+			finalUsage = usage
 		}
 
 		for _, choice := range chunk.Choices {
 			delta := choice.Delta
 
-			if delta.Content != nil && *delta.Content != "" {
+			if delta.Content != "" {
 				if currentItemID == "" {
 					if err := startNewMessage(); err != nil {
 						return nil, fmt.Errorf("start new message: %w", err)
 					}
-					item := OutputItem{
-						Type:    "message",
-						Role:    "assistant",
-						Content: []ContentItem{},
-					}
-					if err := sw.emitOutputItemAdded(item, currentItemID); err != nil {
+					if err := sw.emitOutputItemAdded(map[string]any{
+						"type":    "message",
+						"role":    "assistant",
+						"content": []map[string]any{},
+					}, currentItemID); err != nil {
 						return nil, fmt.Errorf("emit output item added: %w", err)
 					}
 				}
-				accumulatedContent.WriteString(*delta.Content)
+				accumulatedContent.WriteString(delta.Content)
 				hasContent = true
-				if err := sw.emitOutputTextDelta(*delta.Content); err != nil {
+				if err := sw.emitOutputTextDelta(delta.Content); err != nil {
 					return nil, fmt.Errorf("emit output text delta: %w", err)
 				}
 			}
@@ -422,7 +370,7 @@ func (h *ResponsesHandler) processUpstreamStream(
 					}
 				}
 				for _, tcDelta := range delta.ToolCalls {
-					idx := tcDelta.Index
+					idx := int(tcDelta.Index)
 
 					if _, exists := accumulatedToolCalls[idx]; !exists {
 						fallbackID := tcDelta.ID
@@ -445,19 +393,17 @@ func (h *ResponsesHandler) processUpstreamStream(
 					if tcDelta.ID != "" {
 						tc.id = tcDelta.ID
 					}
-					if tcDelta.Function != nil {
-						if tcDelta.Function.Name != "" {
-							tc.name += tcDelta.Function.Name
-						}
-						if tcDelta.Function.Arguments != "" {
-							tc.arguments += tcDelta.Function.Arguments
-							hasToolCalls = true
-						}
+					if tcDelta.Function.Name != "" {
+						tc.name += tcDelta.Function.Name
+					}
+					if tcDelta.Function.Arguments != "" {
+						tc.arguments += tcDelta.Function.Arguments
+						hasToolCalls = true
 					}
 				}
 			}
 
-			if choice.FinishReason != nil && *choice.FinishReason != "" {
+			if choice.FinishReason != "" {
 				if err := flushCurrentItem(); err != nil {
 					return nil, fmt.Errorf("flush current item: %w", err)
 				}
@@ -465,7 +411,7 @@ func (h *ResponsesHandler) processUpstreamStream(
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
+	if err := stream.Err(); err != nil {
 		h.logWithSrc.Error("error reading upstream stream", "error", err)
 		return nil, fmt.Errorf("upstream stream error: %w", err)
 	}
@@ -491,13 +437,6 @@ func parseModelSlug(slug string) (string, string, error) {
 	return parts[0], parts[1], nil
 }
 
-func resolveAPIKey(envKey string) string {
-	if envKey == "" {
-		return ""
-	}
-	return os.Getenv(envKey)
-}
-
 const hexChars = "0123456789abcdef"
 
 const base62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -515,7 +454,6 @@ func randomHex(n int) (string, error) {
 	return string(out), nil
 }
 
-// Sample: resp_0309c0d6cb4ff519016a032143c2288191b3759a2e031f11b2
 func generateResponseID() (string, error) {
 	h, err := randomHex(25)
 	if err != nil {
@@ -524,7 +462,6 @@ func generateResponseID() (string, error) {
 	return "resp_" + h, nil
 }
 
-// Sample: msg_0309c0d6cb4ff519016a03214e4e7c8191bf036ec8113050a7
 func generateMessageID() (string, error) {
 	h, err := randomHex(25)
 	if err != nil {
@@ -533,7 +470,6 @@ func generateMessageID() (string, error) {
 	return "msg_" + h, nil
 }
 
-// Sample: fc_0309c0d6cb4ff519016a032152eb1c819182b3994c61de195b
 func generateFunctionCallItemID() (string, error) {
 	h, err := randomHex(25)
 	if err != nil {
@@ -542,10 +478,6 @@ func generateFunctionCallItemID() (string, error) {
 	return "fc_" + h, nil
 }
 
-// Sample: call_ueWI5DaDk7YLNXdK8uBWyUTg
-//
-// Uses rejection sampling (byte < 248 → byte % 62) for unbiased
-// 24-char [a-zA-Z0-9] output.
 func generateCallID() (string, error) {
 	out := make([]byte, 24)
 	i := 0
@@ -567,252 +499,389 @@ func generateCallID() (string, error) {
 	return "call_" + string(out), nil
 }
 
-func toChatMessages(input []InputItem) []ChatMessage {
-	messages := make([]ChatMessage, 0, len(input))
+func (h *ResponsesHandler) toChatCompletionMessages(req responses.ResponseNewParams) []openai.ChatCompletionMessageParamUnion {
+	instructions := req.Instructions
+	input := req.Input
 
-	for _, item := range input {
-		switch item.Type {
-		case "message":
-			msg := convertMessageItem(item)
-			if msg != nil {
-				messages = append(messages, *msg)
-			}
+	// Count input items for capacity.
+	itemCount := 0
+	if input.OfInputItemList != nil {
+		itemCount = len(input.OfInputItemList)
+	} else if input.OfString.Valid() {
+		itemCount = 1
+	}
 
-		case "function_call":
-			msg := ChatMessage{
-				Role:    "assistant",
-				Content: nil,
-				ToolCalls: []ToolCall{{
-					ID:   item.CallID,
-					Type: "function",
-					Function: ToolCallFunc{
-						Name:      item.Name,
-						Arguments: item.Arguments,
-					},
-				}},
-			}
-			messages = append(messages, msg)
+	capacity := itemCount
+	if instructions.Valid() {
+		capacity++
+	}
 
-		case "function_call_output":
-			text := outputToText(&item)
-			messages = append(messages, ChatMessage{
-				Role:       "tool",
-				Content:    strOrNil(text),
-				ToolCallID: strOrNil(item.CallID),
-			})
+	messages := make([]openai.ChatCompletionMessageParamUnion, 0, capacity)
 
-		case "custom_tool_call_output":
-			text := outputToText(&item)
-			messages = append(messages, ChatMessage{
-				Role:       "tool",
-				Content:    strOrNil(text),
-				ToolCallID: strOrNil(item.CallID),
-			})
+	if instructions.Valid() {
+		messages = append(messages, openai.ChatCompletionMessageParamUnion{
+			OfSystem: &openai.ChatCompletionSystemMessageParam{
+				Content: openai.ChatCompletionSystemMessageParamContentUnion{
+					OfString: param.NewOpt(instructions.Value),
+				},
+			},
+		})
+	}
+
+	// String input → single user message.
+	if input.OfString.Valid() {
+		return append(messages, openai.ChatCompletionMessageParamUnion{
+			OfUser: &openai.ChatCompletionUserMessageParam{
+				Content: openai.ChatCompletionUserMessageParamContentUnion{
+					OfString: param.NewOpt(input.OfString.Value),
+				},
+			},
+		})
+	}
+
+	if input.OfInputItemList == nil {
+		return messages
+	}
+
+	for _, item := range input.OfInputItemList {
+		p := h.toChatMessageParam(item)
+		if p != nil {
+			messages = append(messages, *p)
 		}
 	}
 
 	return messages
 }
 
-func convertMessageItem(item InputItem) *ChatMessage {
-	switch item.Role {
+func (h *ResponsesHandler) toChatMessageParam(item responses.ResponseInputItemUnionParam) *openai.ChatCompletionMessageParamUnion {
+	if item.OfMessage != nil {
+		return convertMessageItem(item.OfMessage)
+	}
+	if item.OfFunctionCall != nil {
+		fc := item.OfFunctionCall
+		asst := openai.ChatCompletionAssistantMessageParam{
+			ToolCalls: []openai.ChatCompletionMessageToolCallUnionParam{{
+				OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+					ID: fc.CallID,
+					Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+						Name:      fc.Name,
+						Arguments: fc.Arguments,
+					},
+				},
+			}},
+		}
+		return &openai.ChatCompletionMessageParamUnion{OfAssistant: &asst}
+	}
+	if item.OfFunctionCallOutput != nil {
+		fco := item.OfFunctionCallOutput
+		text := outputToText(fco.Output)
+		return &openai.ChatCompletionMessageParamUnion{
+			OfTool: &openai.ChatCompletionToolMessageParam{
+				Content: openai.ChatCompletionToolMessageParamContentUnion{
+					OfString: param.NewOpt(text),
+				},
+				ToolCallID: fco.CallID,
+			},
+		}
+	}
+	if item.OfCustomToolCallOutput != nil {
+		ctco := item.OfCustomToolCallOutput
+		text := customOutputToText(ctco.Output)
+		return &openai.ChatCompletionMessageParamUnion{
+			OfTool: &openai.ChatCompletionToolMessageParam{
+				Content: openai.ChatCompletionToolMessageParamContentUnion{
+					OfString: param.NewOpt(text),
+				},
+				ToolCallID: ctco.CallID,
+			},
+		}
+	}
+	if item.OfInputMessage != nil {
+		im := item.OfInputMessage
+		return convertMessageItem(&responses.EasyInputMessageParam{
+			Role: responses.EasyInputMessageRole(im.Role),
+			Content: responses.EasyInputMessageContentUnionParam{
+				OfInputItemContentList: im.Content,
+			},
+		})
+	}
+	if item.OfOutputMessage != nil {
+		om := item.OfOutputMessage
+		var text string
+		for _, c := range om.Content {
+			if c.OfOutputText != nil {
+				text += c.OfOutputText.Text
+			}
+		}
+		content := openai.ChatCompletionAssistantMessageParamContentUnion{}
+		if text != "" {
+			content = openai.ChatCompletionAssistantMessageParamContentUnion{
+				OfString: param.NewOpt(text),
+			}
+		}
+		return &openai.ChatCompletionMessageParamUnion{
+			OfAssistant: &openai.ChatCompletionAssistantMessageParam{
+				Content: content,
+			},
+		}
+	}
+	switch {
+	case item.OfFileSearchCall != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "file_search_call")
+	case item.OfComputerCall != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "computer_call")
+	case item.OfComputerCallOutput != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "computer_call_output")
+	case item.OfWebSearchCall != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "web_search_call")
+	case item.OfToolSearchCall != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "tool_search_call")
+	case item.OfToolSearchOutput != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "tool_search_output")
+	case item.OfReasoning != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "reasoning")
+	case item.OfCompaction != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "compaction")
+	case item.OfImageGenerationCall != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "image_generation_call")
+	case item.OfCodeInterpreterCall != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "code_interpreter_call")
+	case item.OfLocalShellCall != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "local_shell_call")
+	case item.OfLocalShellCallOutput != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "local_shell_call_output")
+	case item.OfShellCall != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "shell_call")
+	case item.OfShellCallOutput != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "shell_call_output")
+	case item.OfApplyPatchCall != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "apply_patch_call")
+	case item.OfApplyPatchCallOutput != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "apply_patch_call_output")
+	case item.OfMcpListTools != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "mcp_list_tools")
+	case item.OfMcpApprovalRequest != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "mcp_approval_request")
+	case item.OfMcpApprovalResponse != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "mcp_approval_response")
+	case item.OfMcpCall != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "mcp_call")
+	case item.OfCustomToolCall != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "custom_tool_call")
+	case item.OfItemReference != nil:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "item_reference")
+	default:
+		h.logWithSrc.Warn("unsupported input item variant", "type", "unknown")
+	}
+	return nil
+}
+
+func convertMessageItem(msg *responses.EasyInputMessageParam) *openai.ChatCompletionMessageParamUnion {
+	switch msg.Role {
 	case "system":
-		text := joinInputText(item.Content)
-		return &ChatMessage{Role: "system", Content: strOrNil(text)}
+		if msg.Content.OfString.Valid() {
+			return &openai.ChatCompletionMessageParamUnion{
+				OfSystem: &openai.ChatCompletionSystemMessageParam{
+					Content: openai.ChatCompletionSystemMessageParamContentUnion{
+						OfString: param.NewOpt(msg.Content.OfString.Value),
+					},
+				},
+			}
+		}
+
+		var texts []string
+		for _, c := range msg.Content.OfInputItemContentList {
+			if c.OfInputText != nil && c.OfInputText.Text != "" {
+				texts = append(texts, c.OfInputText.Text)
+			}
+		}
+		if len(texts) > 0 {
+			parts := make([]openai.ChatCompletionContentPartTextParam, len(texts))
+			for i, t := range texts {
+				parts[i] = openai.ChatCompletionContentPartTextParam{Text: t}
+			}
+			return &openai.ChatCompletionMessageParamUnion{
+				OfSystem: &openai.ChatCompletionSystemMessageParam{
+					Content: openai.ChatCompletionSystemMessageParamContentUnion{
+						OfArrayOfContentParts: parts,
+					},
+				},
+			}
+		}
+		return &openai.ChatCompletionMessageParamUnion{
+			OfSystem: &openai.ChatCompletionSystemMessageParam{},
+		}
+
+	case "developer":
+		if msg.Content.OfString.Valid() {
+			return &openai.ChatCompletionMessageParamUnion{
+				OfDeveloper: &openai.ChatCompletionDeveloperMessageParam{
+					Content: openai.ChatCompletionDeveloperMessageParamContentUnion{
+						OfString: param.NewOpt(msg.Content.OfString.Value),
+					},
+				},
+			}
+		}
+
+		var texts []string
+		for _, c := range msg.Content.OfInputItemContentList {
+			if c.OfInputText != nil && c.OfInputText.Text != "" {
+				texts = append(texts, c.OfInputText.Text)
+			}
+		}
+		if len(texts) > 0 {
+			parts := make([]openai.ChatCompletionContentPartTextParam, len(texts))
+			for i, t := range texts {
+				parts[i] = openai.ChatCompletionContentPartTextParam{Text: t}
+			}
+			return &openai.ChatCompletionMessageParamUnion{
+				OfDeveloper: &openai.ChatCompletionDeveloperMessageParam{
+					Content: openai.ChatCompletionDeveloperMessageParamContentUnion{
+						OfArrayOfContentParts: parts,
+					},
+				},
+			}
+		}
+		return &openai.ChatCompletionMessageParamUnion{
+			OfDeveloper: &openai.ChatCompletionDeveloperMessageParam{},
+		}
 
 	case "user":
-		textParts := filterInputText(item.Content)
-		imageParts := filterInputImages(item.Content)
-
-		if len(imageParts) == 0 {
-			text := joinInputText(item.Content)
-			return &ChatMessage{Role: "user", Content: strOrNil(text)}
-		}
-
-		parts := make([]ContentPart, 0, len(textParts)+len(imageParts))
-		for _, t := range textParts {
-			parts = append(parts, ContentPart{Type: "text", Text: t.Text})
-		}
-		for _, img := range imageParts {
-			parts = append(parts, ContentPart{
-				Type: "image_url",
-				ImageURL: &ImageURL{
-					URL:    img.ImageURL,
-					Detail: img.Detail,
+		if msg.Content.OfString.Valid() {
+			return &openai.ChatCompletionMessageParamUnion{
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfString: param.NewOpt(msg.Content.OfString.Value),
+					},
 				},
-			})
+			}
 		}
-		return &ChatMessage{Role: "user", Content: parts}
+
+		// Walk content list once to preserve item ordering.
+		var parts []openai.ChatCompletionContentPartUnionParam
+		hasImage := false
+		for _, c := range msg.Content.OfInputItemContentList {
+			if c.OfInputText != nil && c.OfInputText.Text != "" {
+				parts = append(parts, openai.ChatCompletionContentPartUnionParam{
+					OfText: &openai.ChatCompletionContentPartTextParam{Text: c.OfInputText.Text},
+				})
+			}
+			if c.OfInputImage != nil {
+				url := ""
+				if c.OfInputImage.ImageURL.Valid() {
+					url = c.OfInputImage.ImageURL.Value
+				}
+				if url == "" && c.OfInputImage.FileID.Valid() {
+					url = c.OfInputImage.FileID.Value
+				}
+				if url != "" {
+					hasImage = true
+					parts = append(parts, openai.ChatCompletionContentPartUnionParam{
+						OfImageURL: &openai.ChatCompletionContentPartImageParam{
+							ImageURL: openai.ChatCompletionContentPartImageImageURLParam{
+								URL:    url,
+								Detail: string(c.OfInputImage.Detail),
+							},
+						},
+					})
+				}
+			}
+		}
+
+		if !hasImage && len(parts) <= 1 {
+			if len(parts) == 1 {
+				return &openai.ChatCompletionMessageParamUnion{
+					OfUser: &openai.ChatCompletionUserMessageParam{
+						Content: openai.ChatCompletionUserMessageParamContentUnion{
+							OfString: param.NewOpt(parts[0].OfText.Text),
+						},
+					},
+				}
+			}
+			return &openai.ChatCompletionMessageParamUnion{
+				OfUser: &openai.ChatCompletionUserMessageParam{},
+			}
+		}
+
+		return &openai.ChatCompletionMessageParamUnion{
+			OfUser: &openai.ChatCompletionUserMessageParam{
+				Content: openai.ChatCompletionUserMessageParamContentUnion{
+					OfArrayOfContentParts: parts,
+				},
+			},
+		}
 
 	case "assistant":
-		text := joinOutputText(item.Content)
-		return &ChatMessage{Role: "assistant", Content: strOrNil(text)}
+		if msg.Content.OfString.Valid() {
+			return &openai.ChatCompletionMessageParamUnion{
+				OfAssistant: &openai.ChatCompletionAssistantMessageParam{
+					Content: openai.ChatCompletionAssistantMessageParamContentUnion{
+						OfString: param.NewOpt(msg.Content.OfString.Value),
+					},
+				},
+			}
+		}
+
+		var text string
+		for _, c := range msg.Content.OfInputItemContentList {
+			if c.OfInputText != nil && c.OfInputText.Text != "" {
+				text += c.OfInputText.Text
+			}
+		}
+		if text != "" {
+			return &openai.ChatCompletionMessageParamUnion{
+				OfAssistant: &openai.ChatCompletionAssistantMessageParam{
+					Content: openai.ChatCompletionAssistantMessageParamContentUnion{
+						OfString: param.NewOpt(text),
+					},
+				},
+			}
+		}
+		return &openai.ChatCompletionMessageParamUnion{
+			OfAssistant: &openai.ChatCompletionAssistantMessageParam{},
+		}
 
 	default:
 		return nil
 	}
 }
 
-func prependInstructions(messages []ChatMessage, instructions string) []ChatMessage {
-	if instructions == "" {
-		return messages
-	}
-
-	result := make([]ChatMessage, 0, len(messages)+1)
-	result = append(result, ChatMessage{
-		Role:    "system",
-		Content: strOrNil(instructions),
-	})
-	result = append(result, messages...)
-	return result
-}
-
-func convertTools(tools []Tool) []ChatTool {
+func toChatTools(tools []responses.ToolUnionParam) []openai.ChatCompletionToolUnionParam {
 	if len(tools) == 0 {
 		return nil
 	}
-
-	result := make([]ChatTool, 0, len(tools))
+	result := make([]openai.ChatCompletionToolUnionParam, 0, len(tools))
 	for _, t := range tools {
-		switch t.Type {
-		case "function":
-			if t.Function != nil {
-				ct := ChatTool{
-					Type: "function",
-					Function: ChatToolFunction{
-						Name:        t.Function.Name,
-						Description: t.Function.Description,
-						Parameters:  t.Function.Parameters,
-					},
-				}
-				if t.Function.Strict {
-					ct.Function.Strict = new(true)
-				}
-				result = append(result, ct)
-			}
-		case "namespace":
-			for _, child := range t.Tools {
-				if child.Type == "function" && child.Function != nil {
-					ct := ChatTool{
-						Type: "function",
-						Function: ChatToolFunction{
-							Name:        child.Function.Name,
-							Description: child.Function.Description,
-							Parameters:  child.Function.Parameters,
-						},
-					}
-					if child.Function.Strict {
-						ct.Function.Strict = new(true)
-					}
-					result = append(result, ct)
-				}
-			}
+		fn := t.OfFunction
+		if fn == nil {
+			continue
 		}
+		f := shared.FunctionDefinitionParam{
+			Name:        fn.Name,
+			Description: fn.Description,
+			Parameters:  fn.Parameters,
+		}
+		if fn.Strict.Valid() && fn.Strict.Value {
+			f.Strict = param.NewOpt(true)
+		}
+		result = append(result, openai.ChatCompletionFunctionTool(f))
 	}
-
 	if len(result) == 0 {
 		return nil
 	}
 	return result
 }
 
-func joinInputText(items []ContentItem) string {
-	var b strings.Builder
-	for _, c := range items {
-		if c.Type == "input_text" {
-			if b.Len() > 0 {
-				b.WriteByte('\n')
-			}
-			b.WriteString(c.Text)
-		}
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-func joinOutputText(items []ContentItem) string {
-	var b strings.Builder
-	for _, c := range items {
-		if c.Type == "output_text" {
-			b.WriteString(c.Text)
-		}
-	}
-	return b.String()
-}
-
-func filterInputText(items []ContentItem) []ContentItem {
-	if len(items) == 0 {
-		return nil
-	}
-	result := make([]ContentItem, 0, len(items))
-	for _, c := range items {
-		if c.Type == "input_text" {
-			result = append(result, c)
-		}
-	}
-	return result
-}
-
-func filterInputImages(items []ContentItem) []ContentItem {
-	if len(items) == 0 {
-		return nil
-	}
-	result := make([]ContentItem, 0, len(items))
-	for _, c := range items {
-		if c.Type == "input_image" {
-			result = append(result, c)
-		}
-	}
-	return result
-}
-
-func outputToText(item *InputItem) string {
-	switch v := item.Output.(type) {
-	case string:
-		if v == "" {
-			return ""
-		}
-		if v[0] == '[' {
-			var items []FunctionCallOutputContentItem
-			if err := json.Unmarshal([]byte(v), &items); err == nil {
-				return joinFunctionCallOutputText(items)
-			}
-		}
-		return v
-	case []any:
-		items := make([]FunctionCallOutputContentItem, 0, len(v))
-		for _, el := range v {
-			if m, ok := el.(map[string]any); ok {
-				var c FunctionCallOutputContentItem
-				if t, ok := m["type"].(string); ok {
-					c.Type = t
-				}
-				if t, ok := m["text"].(string); ok {
-					c.Text = t
-				}
-				items = append(items, c)
-			}
-		}
-		return joinFunctionCallOutputText(items)
+func outputToText(output responses.ResponseInputItemFunctionCallOutputOutputUnionParam) string {
+	if output.OfString.Valid() {
+		return output.OfString.Value
 	}
 	return ""
 }
 
-func joinFunctionCallOutputText(items []FunctionCallOutputContentItem) string {
-	var b strings.Builder
-	for _, c := range items {
-		if c.Type == "input_text" {
-			if b.Len() > 0 {
-				b.WriteByte('\n')
-			}
-			b.WriteString(c.Text)
-		}
+func customOutputToText(output responses.ResponseCustomToolCallOutputOutputUnionParam) string {
+	if output.OfString.Valid() {
+		return output.OfString.Value
 	}
-	return b.String()
-}
-
-func strOrNil(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
+	return ""
 }
