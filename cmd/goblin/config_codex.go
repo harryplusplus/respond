@@ -14,7 +14,7 @@ var configCodexCmd = &cobra.Command{
 If the Goblin config has model definitions, generates a model
 catalog for Codex and links it in the config.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return goblin.RunCodexConfig()
+		return goblin.RunConfigCodex()
 	},
 }
 

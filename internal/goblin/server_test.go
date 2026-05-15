@@ -8,7 +8,7 @@ import (
 )
 
 func newTestHandler() http.Handler {
-	return NewHandler(&Config{})
+	return NewHandler(&GoblinConfig{})
 }
 
 func TestHealthzHandler(t *testing.T) {
@@ -20,7 +20,11 @@ func TestHealthzHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Logf("failed to close response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -50,7 +54,11 @@ func TestHealthzHandler_MethodNotAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Logf("failed to close response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusMethodNotAllowed)
@@ -66,10 +74,13 @@ func TestHandler_UnknownPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Logf("failed to close response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
 }
-

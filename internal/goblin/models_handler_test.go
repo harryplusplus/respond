@@ -15,7 +15,11 @@ func TestModelsHandler_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Logf("failed to close response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -36,7 +40,7 @@ func TestModelsHandler_Empty(t *testing.T) {
 }
 
 func TestModelsHandler_WithModels(t *testing.T) {
-	cfg := &Config{
+	cfg := &GoblinConfig{
 		Providers: map[string]Provider{
 			"test": {
 				Models: map[string]*ModelInfo{
@@ -55,7 +59,11 @@ func TestModelsHandler_WithModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Logf("failed to close response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -87,7 +95,11 @@ func TestModelsHandler_MethodNotAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Logf("failed to close response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusMethodNotAllowed)

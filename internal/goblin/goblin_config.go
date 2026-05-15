@@ -12,9 +12,13 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-type Config struct {
+type GoblinConfig struct {
 	Address   string              `yaml:"address"`
 	Providers map[string]Provider `yaml:"providers"`
+}
+
+func (c *GoblinConfig) baseURL() string {
+	return "http://" + c.Address
 }
 
 type Provider struct {
@@ -23,7 +27,7 @@ type Provider struct {
 	Models  map[string]*ModelInfo `yaml:"models"`
 }
 
-var config atomic.Pointer[Config]
+var goblinConfig atomic.Pointer[GoblinConfig]
 
 const (
 	goblinHomeEnv  = "GOBLIN_HOME"
@@ -47,13 +51,13 @@ func goblinConfigPath(dir string) string {
 	return filepath.Join(dir, "goblin.yaml")
 }
 
-func loadConfig() (*Config, error) {
+func loadGoblinConfig() (*GoblinConfig, error) {
 	dir, err := goblinDir()
 	if err != nil {
 		return nil, err
 	}
 
-	cfg := &Config{}
+	cfg := &GoblinConfig{}
 
 	data, err := os.ReadFile(goblinConfigPath(dir))
 	if err != nil && !os.IsNotExist(err) {
@@ -64,23 +68,19 @@ func loadConfig() (*Config, error) {
 		return nil, err
 	}
 
-	return cfg, parseConfig(cfg)
+	return cfg, parseGoblinConfig(cfg)
 }
 
-func InitConfig() error {
-	cfg, err := loadConfig()
+func InitGoblinConfig() error {
+	cfg, err := loadGoblinConfig()
 	if err != nil {
 		return err
 	}
-	config.Store(cfg)
+	goblinConfig.Store(cfg)
 	return nil
 }
 
-func (c *Config) baseURL() string {
-	return "http://" + c.Address
-}
-
-func parseConfig(cfg *Config) error {
+func parseGoblinConfig(cfg *GoblinConfig) error {
 	if cfg.Address == "" {
 		cfg.Address = defaultAddress
 	}
@@ -112,7 +112,7 @@ func parseConfig(cfg *Config) error {
 	return nil
 }
 
-func HydrateModels(cfg *Config) {
+func HydrateModels(cfg *GoblinConfig) {
 	for name, p := range cfg.Providers {
 		for slug, m := range p.Models {
 			if m == nil {

@@ -18,13 +18,6 @@ import (
 	goblin "github.com/harryplusplus/goblin/internal/goblin"
 )
 
-func checkClose(t *testing.T, f func() error, msg string) {
-	t.Helper()
-	if err := f(); err != nil {
-		t.Errorf("%s: %v", msg, err)
-	}
-}
-
 func requireIntegration(t *testing.T) {
 	t.Helper()
 	if os.Getenv("GOBLIN_INTEGRATION") == "" {
@@ -42,9 +35,9 @@ func requireIntegration(t *testing.T) {
 	}
 }
 
-func startGoblin(t *testing.T) *httptest.Server {
+func setupGoblin(t *testing.T) *httptest.Server {
 	t.Helper()
-	cfg := &goblin.Config{
+	cfg := &goblin.GoblinConfig{
 		Providers: map[string]goblin.Provider{
 			"crof": {
 				BaseURL: "https://crof.ai/v1",
@@ -185,13 +178,18 @@ func lastJSON(text string) ([]byte, error) {
 
 func TestIntegration_ServerHealth(t *testing.T) {
 	requireIntegration(t)
-	srv := startGoblin(t)
+	srv := setupGoblin(t)
 
 	resp, err := http.Get(srv.URL + "/healthz")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer checkClose(t, resp.Body.Close, "close /healthz response")
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Logf("failed to close response body: %v", err)
+		}
+	}()
+
 	if resp.StatusCode != 200 {
 		t.Fatalf("/healthz status = %d", resp.StatusCode)
 	}
@@ -207,7 +205,12 @@ func TestIntegration_ServerHealth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer checkClose(t, resp.Body.Close, "close /models response")
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Logf("failed to close response body: %v", err)
+		}
+	}()
+
 	if resp.StatusCode != 200 {
 		t.Fatalf("/models status = %d", resp.StatusCode)
 	}
@@ -222,7 +225,7 @@ func TestIntegration_ServerHealth(t *testing.T) {
 
 func TestIntegration_Text(t *testing.T) {
 	requireIntegration(t)
-	srv := startGoblin(t)
+	srv := setupGoblin(t)
 	setupEnv(t, srv.URL)
 
 	out := runCodex(t, "exec", "--skip-git-repo-check",
@@ -258,7 +261,7 @@ func TestIntegration_Image(t *testing.T) {
 		t.Skip("SKIP: test image not found at", imgPath)
 	}
 
-	srv := startGoblin(t)
+	srv := setupGoblin(t)
 	setupEnv(t, srv.URL)
 
 	prompt := `Describe what's in this image. Respond with ONLY JSON: {"subject":"...", "colors":["..."]}`
@@ -292,7 +295,7 @@ func TestIntegration_Image(t *testing.T) {
 
 func TestIntegration_Shell(t *testing.T) {
 	requireIntegration(t)
-	srv := startGoblin(t)
+	srv := setupGoblin(t)
 	setupEnv(t, srv.URL)
 
 	out := runCodex(t, "exec", "--skip-git-repo-check",
@@ -324,7 +327,7 @@ func TestIntegration_Shell(t *testing.T) {
 
 func TestIntegration_MultiTurn(t *testing.T) {
 	requireIntegration(t)
-	srv := startGoblin(t)
+	srv := setupGoblin(t)
 	setupEnv(t, srv.URL)
 
 	out1 := runCodex(t, "exec", "--skip-git-repo-check",

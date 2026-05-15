@@ -70,7 +70,7 @@ func codexConfigPath(dir string) string {
 	return filepath.Join(dir, "config.toml")
 }
 
-func runCodexConfig(cfg *Config) error {
+func runConfigCodex(cfg *GoblinConfig) error {
 	dir, err := codexDir()
 	if err != nil {
 		return err
@@ -117,8 +117,8 @@ func runCodexConfig(cfg *Config) error {
 	return nil
 }
 
-func RunCodexConfig() error {
-	return runCodexConfig(config.Load())
+func RunConfigCodex() error {
+	return runConfigCodex(goblinConfig.Load())
 }
 
 func (c *codexConfig) applyGoblinConfig(baseURL string) bool {

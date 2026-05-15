@@ -20,7 +20,7 @@ func setupCodexConfig(t *testing.T, codexHome string, cfg map[string]any) string
 	return path
 }
 
-func initGoblinConfig(t *testing.T, address string) *Config {
+func initGoblinConfig(t *testing.T, address string) *GoblinConfig {
 	t.Helper()
 	goblinHome := t.TempDir()
 	data := []byte("address: " + address + "\n")
@@ -28,7 +28,7 @@ func initGoblinConfig(t *testing.T, address string) *Config {
 		t.Fatal(err)
 	}
 	t.Setenv(goblinHomeEnv, goblinHome)
-	cfg, err := loadConfig()
+	cfg, err := loadGoblinConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestApplyGoblinConfig(t *testing.T) {
 				"model_providers": map[string]any{
 					"goblin": map[string]any{
 						"base_url": "http://0.0.0.0:9999",
-						"name":    "goblin",
+						"name":     "goblin",
 					},
 				},
 			},
@@ -245,7 +245,7 @@ func TestRunCodexConfig_UpdatesWhenMissingProvider(t *testing.T) {
 	t.Setenv(codexHomeEnv, codexHome)
 	cfg := initGoblinConfig(t, "0.0.0.0:9999")
 
-	if err := runCodexConfig(cfg); err != nil {
+	if err := runConfigCodex(cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -258,9 +258,14 @@ func TestRunCodexConfig_UpdatesWhenMissingProvider(t *testing.T) {
 		"model_provider": "goblin",
 	})
 
-	data, _ := os.ReadFile(codexConfigPath(codexHome))
+	data, err := os.ReadFile(codexConfigPath(codexHome))
+	if err != nil {
+		t.Fatal(err)
+	}
 	var raw map[string]any
-	toml.Unmarshal(data, &raw)
+	if err := toml.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
 	p := newCodexConfig(raw).goblinProvider()
 	if p.name() != goblinProviderID {
 		t.Errorf("provider name = %q, want %q", p.name(), goblinProviderID)
@@ -281,7 +286,7 @@ func TestRunCodexConfig_UpdatesWhenWrongProvider(t *testing.T) {
 	t.Setenv(codexHomeEnv, codexHome)
 	cfg := initGoblinConfig(t, "127.0.0.1:8081")
 
-	if err := runCodexConfig(cfg); err != nil {
+	if err := runConfigCodex(cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -290,9 +295,14 @@ func TestRunCodexConfig_UpdatesWhenWrongProvider(t *testing.T) {
 		"model":          "bar",
 	})
 
-	data, _ := os.ReadFile(codexConfigPath(codexHome))
+	data, err := os.ReadFile(codexConfigPath(codexHome))
+	if err != nil {
+		t.Fatal(err)
+	}
 	var raw map[string]any
-	toml.Unmarshal(data, &raw)
+	if err := toml.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
 	p := newCodexConfig(raw).goblinProvider()
 	if p.baseURL() != "http://127.0.0.1:8081" {
 		t.Errorf("base_url = %v, want http://127.0.0.1:8081", p.baseURL())
@@ -310,7 +320,7 @@ func TestRunCodexConfig_SkipsWriteWhenAlreadyCorrect(t *testing.T) {
 		"model_providers": map[string]any{
 			"goblin": map[string]any{
 				"base_url": "http://0.0.0.0:9999",
-				"name":    "goblin",
+				"name":     "goblin",
 			},
 		},
 	}
@@ -318,10 +328,13 @@ func TestRunCodexConfig_SkipsWriteWhenAlreadyCorrect(t *testing.T) {
 	t.Setenv(codexHomeEnv, codexHome)
 	cfg := initGoblinConfig(t, "0.0.0.0:9999")
 
-	origStat, _ := os.Stat(cfgPath)
+	origStat, err := os.Stat(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	origMod := origStat.ModTime()
 
-	if err := runCodexConfig(cfg); err != nil {
+	if err := runConfigCodex(cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -330,7 +343,10 @@ func TestRunCodexConfig_SkipsWriteWhenAlreadyCorrect(t *testing.T) {
 		t.Error("unexpected .bak file: config was not modified")
 	}
 
-	newStat, _ := os.Stat(cfgPath)
+	newStat, err := os.Stat(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !newStat.ModTime().Equal(origMod) {
 		t.Error("config.toml was rewritten even though no change was needed")
 	}
@@ -350,9 +366,11 @@ func TestRunCodexConfig_CleansUpOldBak(t *testing.T) {
 	cfg := initGoblinConfig(t, "0.0.0.0:9999")
 
 	bakPath := codexConfigPath(codexHome) + ".bak"
-	os.WriteFile(bakPath, []byte("stale backup"), 0644)
+	if err := os.WriteFile(bakPath, []byte("stale backup"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
-	if err := runCodexConfig(cfg); err != nil {
+	if err := runConfigCodex(cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -368,9 +386,14 @@ func TestRunCodexConfig_CleansUpOldBak(t *testing.T) {
 		t.Error("bak should contain original config, not stale data")
 	}
 
-	data, _ := os.ReadFile(codexConfigPath(codexHome))
+	data, err := os.ReadFile(codexConfigPath(codexHome))
+	if err != nil {
+		t.Fatal(err)
+	}
 	var raw map[string]any
-	toml.Unmarshal(data, &raw)
+	if err := toml.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
 	p := newCodexConfig(raw).goblinProvider()
 	if p.name() != goblinProviderID {
 		t.Errorf("provider name = %q, want %q", p.name(), goblinProviderID)

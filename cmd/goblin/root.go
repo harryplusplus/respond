@@ -18,7 +18,7 @@ var rootCmd = &cobra.Command{
 to OpenAI Compatibility API for use with Codex.`,
 	Version: Version,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		return goblin.InitConfig()
+		return goblin.InitGoblinConfig()
 	},
 }
 

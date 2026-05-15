@@ -6,11 +6,21 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
 )
+
+type server struct {
+	log    *slog.Logger
+	srcLog *slog.Logger
+	cfg    *GoblinConfig
+}
+
+func newServer(cfg *GoblinConfig) *server {
+	log, srcLog := newComponentLogger("server")
+	return &server{log: log, srcLog: srcLog, cfg: cfg}
+}
 
 // Source: https://github.com/openai/codex/blob/main/codex-rs/models-manager/prompt.md (Apache-2.0)
 //
@@ -18,64 +28,67 @@ import (
 var baseInstructions string
 
 func RunServer() error {
-	return runServer(config.Load())
+	return newServer(goblinConfig.Load()).run()
 }
 
-func runServer(cfg *Config) error {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+func NewHandler(cfg *GoblinConfig) http.Handler {
+	return newServer(cfg).newHandler()
+}
 
+func (s *server) run() error {
 	srv := &http.Server{
-		Addr:    cfg.Address,
-		Handler: NewHandler(cfg),
+		Addr:    s.cfg.Address,
+		Handler: s.newHandler(),
 	}
 
-	errCh := make(chan error, 1)
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	listenErrCh := make(chan error, 1)
+	notifyCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	go func() {
-		slog.Info("starting server", "addr", cfg.Address)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			errCh <- err
+		s.log.Info("starting server", "addr", s.cfg.Address)
+		if err := srv.ListenAndServe(); err != nil {
+			if err != http.ErrServerClosed {
+				listenErrCh <- err
+			}
 			stop()
 		}
 	}()
 
-	<-ctx.Done()
-	slog.Info("shutting down")
+	<-notifyCtx.Done()
+	s.log.Info("shutting down")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	shutdownErr := srv.Shutdown(shutdownCtx)
 
 	select {
-	case listenErr := <-errCh:
+	case listenErr := <-listenErrCh:
 		return errors.Join(listenErr, shutdownErr)
 	default:
 		return shutdownErr
 	}
 }
 
-func NewHandler(cfg *Config) http.Handler {
+func (s *server) newHandler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", handleGetHealthz)
-	mux.HandleFunc("GET /models", handleGetModels(cfg))
-	mux.HandleFunc("POST /responses", handlePostResponses(cfg))
-	return loggingMiddleware(mux)
+	mux.HandleFunc("GET /healthz", s.handleGetHealthz)
+	mux.HandleFunc("GET /models", newModelsHandler(s.cfg).handleGetModels())
+	mux.HandleFunc("POST /responses", newResponsesHandler(s.cfg).handlePostResponses())
+	return s.loggingMiddleware(mux)
 }
 
-func handleGetHealthz(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleGetHealthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte(`{"status":"ok"}` + "\n")); err != nil {
-		slog.Error("failed to write response", "error", err)
+		s.srcLog.Error("healthz handler: write response", "error", err)
 	}
 }
 
-
-func loggingMiddleware(next http.Handler) http.Handler {
+func (s *server) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		slog.Info("request",
+		s.log.Info("request",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"remote", r.RemoteAddr,

@@ -10,7 +10,7 @@ import (
 )
 
 func TestConfigYAMLTags(t *testing.T) {
-	ty := reflect.TypeFor[Config]()
+	ty := reflect.TypeFor[GoblinConfig]()
 	for _, err := range checkYAMLTags(ty, ty.Name()) {
 		t.Error(err)
 	}
@@ -192,7 +192,6 @@ type skipTagStruct struct {
 
 type unexportedFieldStruct struct {
 	FieldOne string `yaml:"field_one"`
-	internal int
 }
 
 type nestedValidStruct struct {
@@ -277,7 +276,10 @@ func TestGoblinDir(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Fatal(err)
+		}
 		want := filepath.Join(home, ".goblin")
 		if got != want {
 			t.Errorf("goblinDir() = %q, want %q", got, want)
@@ -288,27 +290,27 @@ func TestGoblinDir(t *testing.T) {
 func TestBaseURL(t *testing.T) {
 	tests := []struct {
 		name string
-		cfg  Config
+		cfg  GoblinConfig
 		want string
 	}{
-		{name: "localhost_default", cfg: Config{Address: "localhost:8080"}, want: "http://localhost:8080"},
-		{name: "ipv4", cfg: Config{Address: "127.0.0.1:8080"}, want: "http://127.0.0.1:8080"},
-		{name: "all_zeros", cfg: Config{Address: "0.0.0.0:9999"}, want: "http://0.0.0.0:9999"},
-		{name: "port_one", cfg: Config{Address: "localhost:1"}, want: "http://localhost:1"},
-		{name: "port_max", cfg: Config{Address: "localhost:65535"}, want: "http://localhost:65535"},
+		{name: "localhost_default", cfg: GoblinConfig{Address: "localhost:8080"}, want: "http://localhost:8080"},
+		{name: "ipv4", cfg: GoblinConfig{Address: "127.0.0.1:8080"}, want: "http://127.0.0.1:8080"},
+		{name: "all_zeros", cfg: GoblinConfig{Address: "0.0.0.0:9999"}, want: "http://0.0.0.0:9999"},
+		{name: "port_one", cfg: GoblinConfig{Address: "localhost:1"}, want: "http://localhost:1"},
+		{name: "port_max", cfg: GoblinConfig{Address: "localhost:65535"}, want: "http://localhost:65535"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := tt.cfg.baseURL()
 			if got != tt.want {
-				t.Errorf("Config{Address: %q}.baseURL() = %q, want %q", tt.cfg.Address, got, tt.want)
+				t.Errorf("GoblinConfig{Address: %q}.baseURL() = %q, want %q", tt.cfg.Address, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestLoadConfig(t *testing.T) {
+func TestLoadGoblinConfig(t *testing.T) {
 	t.Run("with_config_file", func(t *testing.T) {
 		home := t.TempDir()
 		data := []byte("address: 127.0.0.1:9999\n")
@@ -317,7 +319,7 @@ func TestLoadConfig(t *testing.T) {
 		}
 		t.Setenv(goblinHomeEnv, home)
 
-		cfg, err := loadConfig()
+		cfg, err := loadGoblinConfig()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -329,7 +331,7 @@ func TestLoadConfig(t *testing.T) {
 	t.Run("without_config_file", func(t *testing.T) {
 		t.Setenv(goblinHomeEnv, t.TempDir())
 
-		cfg, err := loadConfig()
+		cfg, err := loadGoblinConfig()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -345,8 +347,8 @@ func TestLoadConfig(t *testing.T) {
 		}
 		t.Setenv(goblinHomeEnv, home)
 
-		if _, err := loadConfig(); err == nil {
-			t.Error("loadConfig() expected error, got nil")
+		if _, err := loadGoblinConfig(); err == nil {
+			t.Error("loadGoblinConfig() expected error, got nil")
 		}
 	})
 
@@ -358,118 +360,118 @@ func TestLoadConfig(t *testing.T) {
 		}
 		t.Setenv(goblinHomeEnv, home)
 
-		if _, err := loadConfig(); err == nil {
-			t.Error("loadConfig() expected error for invalid host, got nil")
+		if _, err := loadGoblinConfig(); err == nil {
+			t.Error("loadGoblinConfig() expected error for invalid host, got nil")
 		}
 	})
 }
 
-func TestParseConfig(t *testing.T) {
+func TestParseGoblinConfig(t *testing.T) {
 	tests := []struct {
 		name    string
-		cfg     Config
+		cfg     GoblinConfig
 		wantErr bool
 	}{
 		{
 			name: "valid_default",
-			cfg: Config{
+			cfg: GoblinConfig{
 				Address: "localhost:8080",
 			},
 		},
 		{
 			name: "valid_ipv4",
-			cfg: Config{
+			cfg: GoblinConfig{
 				Address: "127.0.0.1:8080",
 			},
 		},
 		{
 			name:    "empty_host",
-			cfg:     Config{Address: ":8080"},
+			cfg:     GoblinConfig{Address: ":8080"},
 			wantErr: true,
 		},
 		{
 			name: "valid_all_zeros",
-			cfg: Config{
+			cfg: GoblinConfig{
 				Address: "0.0.0.0:8080",
 			},
 		},
 		{
 			name: "valid_private_ip",
-			cfg: Config{
+			cfg: GoblinConfig{
 				Address: "192.168.1.1:8080",
 			},
 		},
 		{
 			name: "valid_port_min",
-			cfg: Config{
+			cfg: GoblinConfig{
 				Address: "localhost:1",
 			},
 		},
 		{
 			name: "valid_port_max",
-			cfg: Config{
+			cfg: GoblinConfig{
 				Address: "localhost:65535",
 			},
 		},
 		{
 			name: "empty_address_defaults_to_localhost",
-			cfg:  Config{Address: ""},
+			cfg:  GoblinConfig{Address: ""},
 		},
 		{
 			name:    "hostname_instead_of_ip",
-			cfg:     Config{Address: "example.com:8080"},
+			cfg:     GoblinConfig{Address: "example.com:8080"},
 			wantErr: true,
 		},
 		{
 			name:    "missing_colon_and_port",
-			cfg:     Config{Address: "localhost"},
+			cfg:     GoblinConfig{Address: "localhost"},
 			wantErr: true,
 		},
 		{
 			name:    "non_ip_string",
-			cfg:     Config{Address: "not-an-ip:8080"},
+			cfg:     GoblinConfig{Address: "not-an-ip:8080"},
 			wantErr: true,
 		},
 		{
 			name:    "port_zero",
-			cfg:     Config{Address: "localhost:0"},
+			cfg:     GoblinConfig{Address: "localhost:0"},
 			wantErr: true,
 		},
 		{
 			name:    "port_negative",
-			cfg:     Config{Address: "localhost:-1"},
+			cfg:     GoblinConfig{Address: "localhost:-1"},
 			wantErr: true,
 		},
 		{
 			name:    "port_too_high",
-			cfg:     Config{Address: "localhost:65536"},
+			cfg:     GoblinConfig{Address: "localhost:65536"},
 			wantErr: true,
 		},
 		{
 			name:    "port_max_int",
-			cfg:     Config{Address: "localhost:999999"},
+			cfg:     GoblinConfig{Address: "localhost:999999"},
 			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := parseConfig(&tt.cfg)
+			err := parseGoblinConfig(&tt.cfg)
 			if tt.wantErr {
 				if err == nil {
-					t.Errorf("parseConfig(%+v) expected error, got nil", tt.cfg)
+					t.Errorf("parseGoblinConfig(%+v) expected error, got nil", tt.cfg)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseConfig(%+v) unexpected error: %v", tt.cfg, err)
+				t.Errorf("parseGoblinConfig(%+v) unexpected error: %v", tt.cfg, err)
 			}
 		})
 	}
 }
 
 func TestHydrateModels_NilModel(t *testing.T) {
-	cfg := &Config{
+	cfg := &GoblinConfig{
 		Providers: map[string]Provider{
 			"test": {
 				Models: map[string]*ModelInfo{
@@ -494,7 +496,7 @@ func TestHydrateModels_NilModel(t *testing.T) {
 
 func TestHydrateModels_PreservesExplicitFields(t *testing.T) {
 	p := new(3)
-	cfg := &Config{
+	cfg := &GoblinConfig{
 		Providers: map[string]Provider{
 			"crof": {
 				Models: map[string]*ModelInfo{
