@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync/atomic"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -26,8 +25,6 @@ type Provider struct {
 	EnvKey  string                `yaml:"env_key"`
 	Models  map[string]*ModelInfo `yaml:"models"`
 }
-
-var goblinConfig atomic.Pointer[GoblinConfig]
 
 const (
 	goblinHomeEnv  = "GOBLIN_HOME"
@@ -69,15 +66,6 @@ func loadGoblinConfig() (*GoblinConfig, error) {
 	}
 
 	return cfg, parseGoblinConfig(cfg)
-}
-
-func InitGoblinConfig() error {
-	cfg, err := loadGoblinConfig()
-	if err != nil {
-		return err
-	}
-	goblinConfig.Store(cfg)
-	return nil
 }
 
 func parseGoblinConfig(cfg *GoblinConfig) error {

@@ -2,8 +2,6 @@ package main
 
 import (
 	"github.com/spf13/cobra"
-
-	"github.com/harryplusplus/goblin/internal/goblin"
 )
 
 // Version is set via -ldflags at build time, e.g.:
@@ -17,9 +15,6 @@ var rootCmd = &cobra.Command{
 	Long: `A reverse proxy server that converts OpenAI's Responses API (Streaming)
 to OpenAI Compatibility API for use with Codex.`,
 	Version: Version,
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		return goblin.InitGoblinConfig()
-	},
 }
 
 func init() {

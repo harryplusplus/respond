@@ -3,7 +3,6 @@ package goblin
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"os/signal"
 	"syscall"
@@ -11,18 +10,20 @@ import (
 )
 
 type server struct {
-	log        *slog.Logger
-	logWithSrc *slog.Logger
-	cfg        *GoblinConfig
+	log Logger
+	cfg *GoblinConfig
 }
 
 func newServer(cfg *GoblinConfig) *server {
-	log, logWithSrc := newComponentLogger("server")
-	return &server{log: log, logWithSrc: logWithSrc, cfg: cfg}
+	return &server{log: newLogger("server"), cfg: cfg}
 }
 
 func RunServer() error {
-	return newServer(goblinConfig.Load()).run()
+	cfg, err := loadGoblinConfig()
+	if err != nil {
+		return err
+	}
+	return newServer(cfg).run()
 }
 
 func NewHandler(cfg *GoblinConfig) http.Handler {
@@ -76,7 +77,7 @@ func (s *server) handleGetHealthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte(`{"status":"ok"}` + "\n")); err != nil {
-		s.logWithSrc.Error("healthz handler: write response", "error", err)
+		s.log.Error("healthz handler: write response", "error", err)
 	}
 }
 

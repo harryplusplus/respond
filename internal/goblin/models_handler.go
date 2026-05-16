@@ -3,20 +3,17 @@ package goblin
 import (
 	"cmp"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"slices"
 )
 
 type modelsHandler struct {
-	log        *slog.Logger
-	logWithSrc *slog.Logger
-	cfg        *GoblinConfig
+	log Logger
+	cfg *GoblinConfig
 }
 
 func newModelsHandler(cfg *GoblinConfig) *modelsHandler {
-	log, logWithSrc := newComponentLogger("models")
-	return &modelsHandler{log: log, logWithSrc: logWithSrc, cfg: cfg}
+	return &modelsHandler{log: newLogger("models"), cfg: cfg}
 }
 
 func (h *modelsHandler) handleGetModels() http.HandlerFunc {
@@ -38,7 +35,7 @@ func (h *modelsHandler) handleGetModels() http.HandlerFunc {
 		w.WriteHeader(http.StatusOK)
 
 		if err := json.NewEncoder(w).Encode(modelsResponse{Models: models}); err != nil {
-			h.logWithSrc.Error("failed to encode models response", "error", err)
+			h.log.Error("failed to encode models response", "error", err)
 		}
 	}
 }

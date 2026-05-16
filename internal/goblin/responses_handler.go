@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -21,9 +20,8 @@ import (
 )
 
 type responsesHandler struct {
-	log        *slog.Logger
-	logWithSrc *slog.Logger
-	cfg        *GoblinConfig
+	log Logger
+	cfg *GoblinConfig
 }
 
 type sseWriter struct {
@@ -122,8 +120,7 @@ func (s *sseWriter) emitOutputTextDelta(delta string) error {
 }
 
 func newResponsesHandler(cfg *GoblinConfig) *responsesHandler {
-	log, logWithSrc := newComponentLogger("responses")
-	return &responsesHandler{log: log, logWithSrc: logWithSrc, cfg: cfg}
+	return &responsesHandler{log: newLogger("responses"), cfg: cfg}
 }
 
 func (h *responsesHandler) handlePostResponses() http.HandlerFunc {
@@ -177,7 +174,6 @@ func (h *responsesHandler) handlePostResponses() http.HandlerFunc {
 			return
 		}
 
-		// All pre-200 validation passed. From here on, responses are SSE events only.
 		responseID, err := generateResponseID()
 		if err != nil {
 			http.Error(w, "failed to generate response ID", http.StatusInternalServerError)
@@ -191,7 +187,7 @@ func (h *responsesHandler) handlePostResponses() http.HandlerFunc {
 		sw := newSSEWriter(w)
 
 		if err := sw.emitCreated(responseID); err != nil {
-			h.logWithSrc.Error("failed to write initial SSE event", "error", err)
+			h.log.Error("failed to write initial SSE event", "error", err)
 			return
 		}
 
@@ -204,7 +200,7 @@ func (h *responsesHandler) handlePostResponses() http.HandlerFunc {
 			terminalErr = sw.emitCompleted(responseID, usage)
 		}
 		if terminalErr != nil {
-			h.logWithSrc.Error("failed to emit terminal SSE event", "error", terminalErr)
+			h.log.Error("failed to emit terminal SSE event", "error", terminalErr)
 		}
 	}
 }
@@ -412,7 +408,7 @@ func (h *responsesHandler) processUpstreamStream(
 	}
 
 	if err := stream.Err(); err != nil {
-		h.logWithSrc.Error("error reading upstream stream", "error", err)
+		h.log.Error("error reading upstream stream", "error", err)
 		return nil, fmt.Errorf("upstream stream error: %w", err)
 	}
 
@@ -499,27 +495,20 @@ func generateCallID() (string, error) {
 	return "call_" + string(out), nil
 }
 
-func (h *responsesHandler) toChatCompletionMessages(req responses.ResponseNewParams) []openai.ChatCompletionMessageParamUnion {
-	instructions := req.Instructions
-	input := req.Input
-
-	// Count input items for capacity.
-	itemCount := 0
-	if input.OfInputItemList != nil {
-		itemCount = len(input.OfInputItemList)
-	} else if input.OfString.Valid() {
-		itemCount = 1
+func (h *responsesHandler) toChatCompletionMessages(instructions param.Opt[string], input responses.ResponseNewParamsInputUnion) []openai.ChatCompletionMessageParamUnion {
+	msgCount := 0
+	if instructions.Valid() {
+		msgCount++
+	}
+	if input.OfString.Valid() {
+		msgCount++
+	} else if input.OfInputItemList != nil {
+		msgCount += len(input.OfInputItemList)
 	}
 
-	capacity := itemCount
+	msgs := make([]openai.ChatCompletionMessageParamUnion, 0, msgCount)
 	if instructions.Valid() {
-		capacity++
-	}
-
-	messages := make([]openai.ChatCompletionMessageParamUnion, 0, capacity)
-
-	if instructions.Valid() {
-		messages = append(messages, openai.ChatCompletionMessageParamUnion{
+		msgs = append(msgs, openai.ChatCompletionMessageParamUnion{
 			OfSystem: &openai.ChatCompletionSystemMessageParam{
 				Content: openai.ChatCompletionSystemMessageParamContentUnion{
 					OfString: param.NewOpt(instructions.Value),
@@ -528,9 +517,8 @@ func (h *responsesHandler) toChatCompletionMessages(req responses.ResponseNewPar
 		})
 	}
 
-	// String input → single user message.
 	if input.OfString.Valid() {
-		return append(messages, openai.ChatCompletionMessageParamUnion{
+		return append(msgs, openai.ChatCompletionMessageParamUnion{
 			OfUser: &openai.ChatCompletionUserMessageParam{
 				Content: openai.ChatCompletionUserMessageParamContentUnion{
 					OfString: param.NewOpt(input.OfString.Value),
@@ -539,23 +527,19 @@ func (h *responsesHandler) toChatCompletionMessages(req responses.ResponseNewPar
 		})
 	}
 
-	if input.OfInputItemList == nil {
-		return messages
-	}
-
 	for _, item := range input.OfInputItemList {
-		p := h.toChatMessageParam(item)
+		p := h.toChatCompletionMessage(item)
 		if p != nil {
-			messages = append(messages, *p)
+			msgs = append(msgs, *p)
 		}
 	}
 
-	return messages
+	return msgs
 }
 
-func (h *responsesHandler) toChatMessageParam(item responses.ResponseInputItemUnionParam) *openai.ChatCompletionMessageParamUnion {
+func (h *responsesHandler) toChatCompletionMessage(item responses.ResponseInputItemUnionParam) openai.ChatCompletionMessageParamUnion {
 	if item.OfMessage != nil {
-		return convertMessageItem(item.OfMessage)
+		return h.toChatCompletionMessageFromMessage(item.OfMessage)
 	}
 	if item.OfFunctionCall != nil {
 		fc := item.OfFunctionCall
@@ -627,74 +611,78 @@ func (h *responsesHandler) toChatMessageParam(item responses.ResponseInputItemUn
 	}
 	switch {
 	case item.OfFileSearchCall != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "file_search_call")
+		h.log.Warn("unsupported input item variant", "type", "file_search_call")
 	case item.OfComputerCall != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "computer_call")
+		h.log.Warn("unsupported input item variant", "type", "computer_call")
 	case item.OfComputerCallOutput != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "computer_call_output")
+		h.log.Warn("unsupported input item variant", "type", "computer_call_output")
 	case item.OfWebSearchCall != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "web_search_call")
+		h.log.Warn("unsupported input item variant", "type", "web_search_call")
 	case item.OfToolSearchCall != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "tool_search_call")
+		h.log.Warn("unsupported input item variant", "type", "tool_search_call")
 	case item.OfToolSearchOutput != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "tool_search_output")
+		h.log.Warn("unsupported input item variant", "type", "tool_search_output")
 	case item.OfReasoning != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "reasoning")
+		h.log.Warn("unsupported input item variant", "type", "reasoning")
 	case item.OfCompaction != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "compaction")
+		h.log.Warn("unsupported input item variant", "type", "compaction")
 	case item.OfImageGenerationCall != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "image_generation_call")
+		h.log.Warn("unsupported input item variant", "type", "image_generation_call")
 	case item.OfCodeInterpreterCall != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "code_interpreter_call")
+		h.log.Warn("unsupported input item variant", "type", "code_interpreter_call")
 	case item.OfLocalShellCall != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "local_shell_call")
+		h.log.Warn("unsupported input item variant", "type", "local_shell_call")
 	case item.OfLocalShellCallOutput != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "local_shell_call_output")
+		h.log.Warn("unsupported input item variant", "type", "local_shell_call_output")
 	case item.OfShellCall != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "shell_call")
+		h.log.Warn("unsupported input item variant", "type", "shell_call")
 	case item.OfShellCallOutput != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "shell_call_output")
+		h.log.Warn("unsupported input item variant", "type", "shell_call_output")
 	case item.OfApplyPatchCall != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "apply_patch_call")
+		h.log.Warn("unsupported input item variant", "type", "apply_patch_call")
 	case item.OfApplyPatchCallOutput != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "apply_patch_call_output")
+		h.log.Warn("unsupported input item variant", "type", "apply_patch_call_output")
 	case item.OfMcpListTools != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "mcp_list_tools")
+		h.log.Warn("unsupported input item variant", "type", "mcp_list_tools")
 	case item.OfMcpApprovalRequest != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "mcp_approval_request")
+		h.log.Warn("unsupported input item variant", "type", "mcp_approval_request")
 	case item.OfMcpApprovalResponse != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "mcp_approval_response")
+		h.log.Warn("unsupported input item variant", "type", "mcp_approval_response")
 	case item.OfMcpCall != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "mcp_call")
+		h.log.Warn("unsupported input item variant", "type", "mcp_call")
 	case item.OfCustomToolCall != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "custom_tool_call")
+		h.log.Warn("unsupported input item variant", "type", "custom_tool_call")
 	case item.OfItemReference != nil:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "item_reference")
+		h.log.Warn("unsupported input item variant", "type", "item_reference")
 	default:
-		h.logWithSrc.Warn("unsupported input item variant", "type", "unknown")
+		h.log.Warn("unsupported input item variant", "type", "unknown")
 	}
 	return nil
 }
 
-func convertMessageItem(msg *responses.EasyInputMessageParam) *openai.ChatCompletionMessageParamUnion {
+func (h *responsesHandler) toChatCompletionMessageFromMessage(msg *responses.EasyInputMessageParam) (openai.ChatCompletionMessageParamUnion, bool) {
 	switch msg.Role {
 	case "system":
 		if msg.Content.OfString.Valid() {
-			return &openai.ChatCompletionMessageParamUnion{
+			return openai.ChatCompletionMessageParamUnion{
 				OfSystem: &openai.ChatCompletionSystemMessageParam{
 					Content: openai.ChatCompletionSystemMessageParamContentUnion{
 						OfString: param.NewOpt(msg.Content.OfString.Value),
 					},
 				},
+			}, true
+		}
+
+		for _, c := range msg.Content.OfInputItemContentList {
+			if c.OfInputText != nil {
+				texts = append(texts, c.OfInputText.Text)
+			} else if c.OfInputImage != nil {
+				// TODO
+			} else if c.OfInputFile != nil {
+				// TODO
 			}
 		}
 
-		var texts []string
-		for _, c := range msg.Content.OfInputItemContentList {
-			if c.OfInputText != nil && c.OfInputText.Text != "" {
-				texts = append(texts, c.OfInputText.Text)
-			}
-		}
 		if len(texts) > 0 {
 			parts := make([]openai.ChatCompletionContentPartTextParam, len(texts))
 			for i, t := range texts {

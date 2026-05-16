@@ -118,7 +118,11 @@ func runConfigCodex(cfg *GoblinConfig) error {
 }
 
 func RunConfigCodex() error {
-	return runConfigCodex(goblinConfig.Load())
+	cfg, err := loadGoblinConfig()
+	if err != nil {
+		return err
+	}
+	return runConfigCodex(cfg)
 }
 
 func (c *codexConfig) applyGoblinConfig(baseURL string) bool {
